@@ -1,6 +1,6 @@
-def subunit_model(cell_num, ver, data_path, stim_path, stim_save_path=None, STA_path=None,
-                  subunits_save_path=None, sigma=3, node_num=60,
-                  batch_size=25, learn_rate=0.5, num_epochs=100, stop_thr=0, L1_reg=0):
+import numpy as np
+
+def subunit_model(cell_num, ver, data_path, stim_path, stim_save_path=None, STA_path=None, subunits_save_path=None, sigma=3, node_num=60, batch_size=25, learn_rate=0.5, num_epochs=100, stop_thr=0, L1_reg=0):
 
   """
   This is the main function that runs the entire pipeline. For a given cell, the function:
@@ -35,7 +35,6 @@ def subunit_model(cell_num, ver, data_path, stim_path, stim_save_path=None, STA_
     cropped_STA.shape[0] (int): size of the width of the cropped image
     cropped_STA.shape[1] (int): size of the height of the cropped image
   """
-
   # Screen resolution
   screen_x = 800
   screen_y = 600
@@ -83,9 +82,9 @@ def subunit_model(cell_num, ver, data_path, stim_path, stim_save_path=None, STA_
   x_train, x_valid, y_train, y_valid = train_test_split(x_train, y_train)
 
   # Format the three sets for the neural network
-  traindataset = MyDataset(x_train,y_train)
-  testdataset = MyDataset(x_test,y_test)
-  validdataset = MyDataset(x_valid,y_valid)
+  traindataset = Spike_Dataset(x_train,y_train)
+  testdataset = Spike_Dataset(x_test,y_test)
+  validdataset = Spike_Dataset(x_valid,y_valid)
 
   # Create the neural network
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -119,9 +118,8 @@ def subunit_model(cell_num, ver, data_path, stim_path, stim_save_path=None, STA_
                                         train_set=traindataset, valid_set=validdataset, test_set=None, sampler=sampler,
                                         batch_size=batch_size, learning_rate=learn_rate,
                                         n_epochs=num_epochs, stop_thr=stop_thr,
-                                        L1_coeff=L1_reg, L2_coeff=L2_reg,
-                                        shuffle=False,
-                                        dynamic_lr=dynamic_lr, scheduler_step=scheduler_step, scheduler_gamma=scheduler_gamma, print_output=True)
+                                        L1_coeff=L1_reg,
+                                        shuffle=False, print_output=True)
   
   # Test the model
   test_loss, test_accuracy = run_model(model, running_mode='test', train_set=None, valid_set=None, test_set=testdataset, sampler=None,
