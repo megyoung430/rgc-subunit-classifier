@@ -1,30 +1,34 @@
-def gen_subunit_model(subunits, x, y, spikecounts, filter_length, num_frames, num_trials, 
-                      spatial_STA, temp_STA, crop, crop_x, crop_y, stim_gen=False, stim_path=None):
-
-  def nonlin(x, a1, a2, a3):
-    return a1 * np.log(1 + np.exp(a2 * (x + a3)))
+def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_frames, num_trials, STAc, stim_gen=False, stim_path=None, running_seed=None, save_stim=False, save_stim_path=None):
+    def nonlin(x, a1, a2, a3):
+        return a1 * np.log(1 + np.exp(a2 * (x + a3)))
+    
+    if stim_gen:
+        seed = running_seed
   
-  # Normalize the subunits to the Euclidian norm
-  num_subunits = subunits.shape[0]
-  for i in range(num_subunits):
-    subunits[i,:,:] /= np.linalg.norm(subunits[i,:,:].flatten())
+    # Iterate over the stimulus blocks
+    for trial in range(num_trials):
+        
+        if stim_gen:
+          # Recreate the stimulus
+          stim, seed = ranb(seed, x * y * num_frames)
+          stim = np.asarray(stim, dtype='int8')  # Turn boolean to integers
+          stim = stim.reshape((y*x, num_frames), order='F')  # Re-shape array
+          stim[stim == 0] = -1  # Change values to 1 and -1
+        else:
+          os.chdir(stim_path)
+          filename = 'stim' + str(trial).zfill(4) + '.h5'
+          with h5py.File(filename, mode='r') as f:
+              stim = f['stim'][:,:]
 
-  init_values = np.zeros(num_subunits) / num_subunits
-  subunits = subunits.reshape(num_subunits, -1)
-
-  # Check if the cell is an ON-cell or OFF-cell. If the cell is an OFF-cell, flip the sign of the cropped spatial STA.
-  if spatial_STA.flatten()[np.abs(spatial_STA.flatten()).argmax()] > 0:
-    weights = optimize.leastsq(lambda w: subunits.T.dot(w) - spatial_STA.flatten(), init_values)[0]
+        if stim_gen and save_stim:
+          # Save the stimulus
+          filename = 'stim' + str(trial).zfill(4) + '.h5'
+          os.chdir(save_stim_path)
+          with h5py.File(filename, mode='w') as f:
+              f.create_dataset('stim', data=stim, compression=3)
   else:
-    weights = optimize.leastsq(lambda w: subunits.T.dot(w) - -1*spatial_STA.flatten(), init_values)[0]
-
-  os.chdir(stim_path)
-
-  filtered_stims = np.zeros(shape=((num_frames-filter_length)*num_trials,num_subunits))
-  counter = 0
-
-  for trial in trange(num_trials):
-      
+    os.chdir(stim_path)
+    for trial in range(num_trials):
       filename = 'stim' + str(trial).zfill(4) + '.h5'
       with h5py.File(filename, mode='r') as f:
           stim = f['stim'][:,:]
@@ -32,18 +36,16 @@ def gen_subunit_model(subunits, x, y, spikecounts, filter_length, num_frames, nu
           stim = stim[crop]
           stim = stim.reshape(crop_x*crop_y,num_frames)
 
+  filtered_stims = []
+  for trial in range(num_trials):
       for frame in range(filter_length,num_frames):
         frames = stim[:,(frame-filter_length):frame]
-        frames = temp_STA*frames
-        curr_SE = np.mean(frames,axis=1)
-        filtered_stims[counter,:] = subunits.dot(curr_SE)
-        counter = counter + 1
+        filtered_stim = STAc.flatten('F').dot(frames.flatten('F'))
+        filtered_stims.append(filtered_stim)
 
-  filtered_stims[filtered_stims < 0] = 0
-  filtered_stims = filtered_stims.dot(weights)
+  filtered_stims = np.asarray(filtered_stims)
 
   num_bins = 40
-
   bins = mquantiles(filtered_stims, np.linspace(0, 1, num_bins+1, endpoint=False)[1:])
 
   spike_counts = np.zeros(shape=(num_bins))
@@ -53,15 +55,19 @@ def gen_subunit_model(subunits, x, y, spikecounts, filter_length, num_frames, nu
 
   for bin in range(num_bins):
       indices = np.where(bin_ind == bin)[0]
-      spike_counts[bin] = all_spikecounts[indices].mean() / dt
+      spike_counts[bin] = all_spikecounts[indices].mean()
 
-  spike_counts[np.isnan(spike_counts)] = 0
+  spike_counts /= dt
 
-  params_subunits = optimize.leastsq(lambda p, x, y: y - nonlin(x, *p), [0, 0, 0], args=(bins, spike_counts))[0]
-  return params_subunits, weights
+  indices = ~np.isnan(spike_counts)
+  spike_counts = spike_counts[indices]
+  bins = bins[indices]
 
-def get_subunit_predictions(cell_num, params_subunits, weights, num_frames, temp_STA, crop, crop_x, crop_y,
-                            stim_frz_gen=False, stim_frz_path=None, save_stim_frz=False, save_stim_frz_path=None):
+  params_STA = optimize.leastsq(lambda p, x, y: y - nonlin(x, *p), [1, 1, 1], args=(bins[1:], spike_counts[1:]))[0]
+  return params_STA
+
+  def get_STA_predictions(cell_num, params_STA, STAc, crop, crop_x, crop_y, 
+                        stim_frz_gen=False, stim_frz_path=None, save_stim_frz=False, save_stim_frz_path=None):
 
   def nonlin(x, a1, a2, a3):
     return a1 * np.log(1 + np.exp(a2 * (x + a3)))
@@ -115,26 +121,23 @@ def get_subunit_predictions(cell_num, params_subunits, weights, num_frames, temp
     with h5py.File(filename, mode='r') as f:
       stim_frz = f['stim_frz'][:,:]
   
+  preds_STA = []
+
   # Recreate the cropped stimulus
   stim_frz = stim_frz[crop]
   stim_frz = np.moveaxis(stim_frz, 0, 1) # Switch x and y
   stim_frz = stim_frz.reshape((crop_y*crop_x,num_frames_frz), order='F')
 
-  filtered_stim_frz = np.zeros(shape=(1,num_subunits))
-  preds_sub = []
-
   for frame in range(filter_length,num_frames_frz):
+    # Generate the SE for that frame
     frames = stim_frz[:,(frame-filter_length):frame]
-    frames = temp_STA*frames
-    curr_SE = np.mean(frames,axis=1)
-    filtered_stim_frz = subunits.dot(curr_SE)
-    filtered_stim_frz = filtered_stim_frz.dot(weights)
-    rate = nonlin(filtered_stim_frz,*params_subunits)
-    preds_sub.append(rate)
+    filtered_stim_frz = STAc.flatten('F').dot(frames.flatten('F'))
+    rate = nonlin(filtered_stim_frz,*params_STA)
+    preds_STA.append(rate)
 
-  preds_sub = np.asarray(preds_sub)
+  preds_STA = np.asarray(preds_STA)
   time = np.arange(num_frames_frz)*dt
   actual_fr = np.mean(spikecounts_frz,axis=1)/dt
 
-  corr_coef = np.corrcoef(actual_fr[filter_length:],preds_sub)[0,1]
-  return preds_sub, corr_coef, actual_fr, time
+  corr_coef = np.corrcoef(actual_fr[filter_length:],preds_STA)[0,1]
+  return preds_STA, corr_coef, actual_fr, time
