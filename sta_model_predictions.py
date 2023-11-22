@@ -1,47 +1,47 @@
 def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_frames, num_trials, STAc, stim_gen=False, stim_path=None, running_seed=None, save_stim=False, save_stim_path=None):
-    def nonlin(x, a1, a2, a3):
-        return a1 * np.log(1 + np.exp(a2 * (x + a3)))
-    
-    if stim_gen:
-        seed = running_seed
+	def nonlin(x, a1, a2, a3):
+		return a1 * np.log(1 + np.exp(a2 * (x + a3)))
+	
+	if stim_gen:
+		seed = running_seed
   
-    # Iterate over the stimulus blocks
-    for trial in range(num_trials):
-        
-        if stim_gen:
-          # Recreate the stimulus
-          stim, seed = ranb(seed, x * y * num_frames)
-          stim = np.asarray(stim, dtype='int8')  # Turn boolean to integers
-          stim = stim.reshape((y*x, num_frames), order='F')  # Re-shape array
-          stim[stim == 0] = -1  # Change values to 1 and -1
-        else:
-          os.chdir(stim_path)
-          filename = 'stim' + str(trial).zfill(4) + '.h5'
-          with h5py.File(filename, mode='r') as f:
-              stim = f['stim'][:,:]
+	# Iterate over the stimulus blocks
+	for trial in range(num_trials):
+		
+		if stim_gen:
+		  # Recreate the stimulus
+		  stim, seed = ranb(seed, x * y * num_frames)
+		  stim = np.asarray(stim, dtype='int8')  # Turn boolean to integers
+		  stim = stim.reshape((y*x, num_frames), order='F')  # Re-shape array
+		  stim[stim == 0] = -1  # Change values to 1 and -1
+		else:
+		  os.chdir(stim_path)
+		  filename = 'stim' + str(trial).zfill(4) + '.h5'
+		  with h5py.File(filename, mode='r') as f:
+			  stim = f['stim'][:,:]
 
-        if stim_gen and save_stim:
-          # Save the stimulus
-          filename = 'stim' + str(trial).zfill(4) + '.h5'
-          os.chdir(save_stim_path)
-          with h5py.File(filename, mode='w') as f:
-              f.create_dataset('stim', data=stim, compression=3)
+		if stim_gen and save_stim:
+		  # Save the stimulus
+		  filename = 'stim' + str(trial).zfill(4) + '.h5'
+		  os.chdir(save_stim_path)
+		  with h5py.File(filename, mode='w') as f:
+			  f.create_dataset('stim', data=stim, compression=3)
   else:
-    os.chdir(stim_path)
-    for trial in range(num_trials):
-      filename = 'stim' + str(trial).zfill(4) + '.h5'
-      with h5py.File(filename, mode='r') as f:
-          stim = f['stim'][:,:]
-          stim = stim.reshape(x,y,num_frames)
-          stim = stim[crop]
-          stim = stim.reshape(crop_x*crop_y,num_frames)
+	os.chdir(stim_path)
+	for trial in range(num_trials):
+	  filename = 'stim' + str(trial).zfill(4) + '.h5'
+	  with h5py.File(filename, mode='r') as f:
+		  stim = f['stim'][:,:]
+		  stim = stim.reshape(x,y,num_frames)
+		  stim = stim[crop]
+		  stim = stim.reshape(crop_x*crop_y,num_frames)
 
   filtered_stims = []
   for trial in range(num_trials):
-      for frame in range(filter_length,num_frames):
-        frames = stim[:,(frame-filter_length):frame]
-        filtered_stim = STAc.flatten('F').dot(frames.flatten('F'))
-        filtered_stims.append(filtered_stim)
+	  for frame in range(filter_length,num_frames):
+		frames = stim[:,(frame-filter_length):frame]
+		filtered_stim = STAc.flatten('F').dot(frames.flatten('F'))
+		filtered_stims.append(filtered_stim)
 
   filtered_stims = np.asarray(filtered_stims)
 
@@ -54,8 +54,8 @@ def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_fr
   bin_ind = np.digitize(filtered_stims, bins)
 
   for bin in range(num_bins):
-      indices = np.where(bin_ind == bin)[0]
-      spike_counts[bin] = all_spikecounts[indices].mean()
+	  indices = np.where(bin_ind == bin)[0]
+	  spike_counts[bin] = all_spikecounts[indices].mean()
 
   spike_counts /= dt
 
@@ -67,10 +67,10 @@ def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_fr
   return params_STA
 
   def get_STA_predictions(cell_num, params_STA, STAc, crop, crop_x, crop_y, 
-                        stim_frz_gen=False, stim_frz_path=None, save_stim_frz=False, save_stim_frz_path=None):
+						stim_frz_gen=False, stim_frz_path=None, save_stim_frz=False, save_stim_frz_path=None):
 
   def nonlin(x, a1, a2, a3):
-    return a1 * np.log(1 + np.exp(a2 * (x + a3)))
+	return a1 * np.log(1 + np.exp(a2 * (x + a3)))
   
   # Screen resolution
   screen_x = 800
@@ -100,26 +100,26 @@ def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_fr
   spikecounts_frz = spikecounts_frz[cell_num]
 
   if stim_frz_gen:
-    # Random seed to generate the stimulus sequence
-    frozen_seed = -20000
+	# Random seed to generate the stimulus sequence
+	frozen_seed = -20000
 
-    # Create the frozen stimulus (always the same and repeated for all trials)
-    stim_frz = ranb(frozen_seed, x * y * num_frames_frz)[0]
-    stim_frz = np.asarray(stim_frz, dtype='int8')  # Turn boolean to integers
-    stim_frz = stim_frz.reshape((y,x, num_frames_frz), order='F')  # Re-shape array
-    stim_frz = np.moveaxis(stim_frz, 0, 1) # Switch x and y
-    stim_frz[stim_frz == 0] = -1  # Change values to 1 and -1
+	# Create the frozen stimulus (always the same and repeated for all trials)
+	stim_frz = ranb(frozen_seed, x * y * num_frames_frz)[0]
+	stim_frz = np.asarray(stim_frz, dtype='int8')  # Turn boolean to integers
+	stim_frz = stim_frz.reshape((y,x, num_frames_frz), order='F')  # Re-shape array
+	stim_frz = np.moveaxis(stim_frz, 0, 1) # Switch x and y
+	stim_frz[stim_frz == 0] = -1  # Change values to 1 and -1
 
-    if stim_frz_gen and save_stim_frz:
-      os.chdir(save_stim_frz_path)
-      filename = 'stim_frz.h5'
-      with h5py.File(filename, mode='w') as f:
-          f.create_dataset('stim_frz', data=stim_frz, compression=3)
+	if stim_frz_gen and save_stim_frz:
+	  os.chdir(save_stim_frz_path)
+	  filename = 'stim_frz.h5'
+	  with h5py.File(filename, mode='w') as f:
+		  f.create_dataset('stim_frz', data=stim_frz, compression=3)
   else:
-    os.chdir(stim_frz_path)
-    filename = 'stim_frz.h5'
-    with h5py.File(filename, mode='r') as f:
-      stim_frz = f['stim_frz'][:,:]
+	os.chdir(stim_frz_path)
+	filename = 'stim_frz.h5'
+	with h5py.File(filename, mode='r') as f:
+	  stim_frz = f['stim_frz'][:,:]
   
   preds_STA = []
 
@@ -129,11 +129,11 @@ def gen_STA_model(x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_fr
   stim_frz = stim_frz.reshape((crop_y*crop_x,num_frames_frz), order='F')
 
   for frame in range(filter_length,num_frames_frz):
-    # Generate the SE for that frame
-    frames = stim_frz[:,(frame-filter_length):frame]
-    filtered_stim_frz = STAc.flatten('F').dot(frames.flatten('F'))
-    rate = nonlin(filtered_stim_frz,*params_STA)
-    preds_STA.append(rate)
+	# Generate the SE for that frame
+	frames = stim_frz[:,(frame-filter_length):frame]
+	filtered_stim_frz = STAc.flatten('F').dot(frames.flatten('F'))
+	rate = nonlin(filtered_stim_frz,*params_STA)
+	preds_STA.append(rate)
 
   preds_STA = np.asarray(preds_STA)
   time = np.arange(num_frames_frz)*dt
