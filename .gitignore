@@ -5,6 +5,10 @@ __pycache__/
 *.egg-info/
 .venv/
 imported_from_colab/
-results/
+results/classifier_performances
+results/classifier_subunits
+results/ln_performances
+results/sta
+results/stnmf_predictions
 
 # Generated outputs can be large; keep only intentionally tracked results.
