@@ -6,6 +6,5 @@ __pycache__/
 .venv/
 imported_from_colab/
 results/classifier_performances
-results/classifier_subunits
 
 # Generated outputs can be large; keep only intentionally tracked results.
