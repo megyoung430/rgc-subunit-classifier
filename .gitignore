@@ -7,6 +7,5 @@ __pycache__/
 imported_from_colab/
 results/classifier_performances
 results/classifier_subunits
-results/ln_performances
 
 # Generated outputs can be large; keep only intentionally tracked results.
