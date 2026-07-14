@@ -9,6 +9,5 @@ results/classifier_performances
 results/classifier_subunits
 results/ln_performances
 results/sta
-results/stnmf_predictions
 
 # Generated outputs can be large; keep only intentionally tracked results.
