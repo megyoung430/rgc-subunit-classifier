@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.venv/
+imported_from_colab/
+data/stimulus_data/
+results/
+
+# Generated outputs can be large; keep only intentionally tracked results.

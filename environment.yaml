@@ -1,0 +1,19 @@
+name: rgc_subunit_classifier
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.5
+  - pip>=23.3
+  - pip:
+      # Install this repository separately with `python -m pip install -e .`.
+      - h5py==3.10.0
+      - ipykernel>=6.29,<7
+      - jupyterlab>=4.2,<5
+      - matplotlib==3.8.2
+      - numpy==1.26.2
+      - pytest>=9.0,<10
+      - scikit-learn==1.9.0
+      - scipy==1.11.4
+      - shapely==2.0.2
+      - torch==2.3.1

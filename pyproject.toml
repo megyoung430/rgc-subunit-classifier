@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rgc-subunit-classifier"
+version = "0.1.0"
+description = "Infer retinal ganglion cell receptive-field subunits with a neural network."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "h5py>=3.9",
+  "matplotlib>=3.8",
+  "numpy>=1.24",
+  "scipy>=1.11",
+  "scikit-learn>=1.3",
+  "shapely>=2.0",
+  "torch>=2.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9,<10"]
+notebooks = ["ipykernel>=6.29,<7", "jupyterlab>=4.2,<5"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["."]
