@@ -146,8 +146,15 @@ with a caption file):
 | [02_classifier_subunit_model.ipynb](scripts/tutorials/02_classifier_subunit_model.ipynb) | Training the spike classifier, judging it (balanced accuracy, ROC AUC), selecting subunits by Moran's I, and comparing the subunit model with the LN model |
 | [03_autoencoder_subunit_model.ipynb](scripts/tutorials/03_autoencoder_subunit_model.ipynb) | The same with the spike-triggered autoencoder, including reconstructions |
 
-They read the data from `data/` unless `RGC_DATA_ROOT` points elsewhere, and set
-`MAX_TRIALS` (default all 219) for a quicker first pass.
+They read the data from `data/` unless `RGC_DATA_ROOT` points elsewhere. A small
+`MAX_TRIALS` only checks that the code runs: results such as the number of
+subunits change completely with fewer trials, so use all 219 before reading
+anything into them.
+
+The notebooks are generated without outputs by
+`scripts/tutorials/make_tutorials.py`. To change one, edit that file and run
+`python scripts/tutorials/make_tutorials.py scripts/tutorials` from the
+repository root, rather than editing the notebook JSON.
 
 The demo scripts below run the same sequence from the command line, fit the LN
 model, train one extractor, inspect weights/subunits, fit the derived subunit
@@ -287,9 +294,10 @@ Tutorial output directories contain:
 | `summary.json` | Configuration, noise ceiling, and metrics for the separable LN, full-STA LN and subunit models |
 | `model_predictions.npz` | Actual rate, time, predictions, nonlinearities, combination weights |
 | `*_weights_and_subunits.npz` | Full spatial weights, selected subunits, ellipse mask |
-| `*_node_weights.png` | Every hidden/encoder spatial weight |
-| `selected_subunits.png` | Moran-selected spatial filters |
-| `frozen_noise_predictions.png` | Actual, LN, and subunit-model time series |
+| `*_node_weights.{pdf,png,svg}` | Every hidden/encoder spatial weight |
+| `selected_subunits.{pdf,png,svg}` | Moran-selected spatial filters |
+| `frozen_noise_predictions.{pdf,png,svg}` | Actual, LN, and subunit-model time series |
+| `*.caption.txt` | Long-form caption beside each figure |
 
 Correlation and MSE compare models on identical held-out frozen-noise bins; the
 normalized correlation divides by the repeats' noise ceiling (the best
