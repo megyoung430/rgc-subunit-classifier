@@ -136,9 +136,22 @@ rules, validation commands, saved STA files, and partial-trial behavior.
 
 ## Tutorials
 
-The recommended entry points reproduce the full sequence: fit the LN model,
-train one extractor, inspect weights/subunits, fit the derived subunit model,
-and compare both encoding models on frozen noise.
+Three step-by-step notebooks in `scripts/tutorials/` explain the analysis for
+one cell, with figures saved under `results/tutorials/` (pdf, png and svg, each
+with a caption file):
+
+| Notebook | Covers |
+|---|---|
+| [01_sta_and_ln_model.ipynb](scripts/tutorials/01_sta_and_ln_model.ipynb) | Spike counts, the white-noise stimulus, the spike-triggered average, the ellipse crop, and the LN model tested on frozen noise against the noise ceiling |
+| [02_classifier_subunit_model.ipynb](scripts/tutorials/02_classifier_subunit_model.ipynb) | Training the spike classifier, judging it (balanced accuracy, ROC AUC), selecting subunits by Moran's I, and comparing the subunit model with the LN model |
+| [03_autoencoder_subunit_model.ipynb](scripts/tutorials/03_autoencoder_subunit_model.ipynb) | The same with the spike-triggered autoencoder, including reconstructions |
+
+They read the data from `data/` unless `RGC_DATA_ROOT` points elsewhere, and set
+`MAX_TRIALS` (default all 219) for a quicker first pass.
+
+The demo scripts below run the same sequence from the command line, fit the LN
+model, train one extractor, inspect weights/subunits, fit the derived subunit
+model, and compare both encoding models on frozen noise.
 
 | Extractor | Script | Interactive notebook |
 |---|---|---|
