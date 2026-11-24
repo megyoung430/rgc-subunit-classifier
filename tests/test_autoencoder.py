@@ -60,3 +60,9 @@ def test_spatial_regularizer_backpropagates():
         ellipse_mask=np.ones((1, 2), dtype=bool),
     )
     assert not torch.equal(before, model.encoder_layer.weight)
+
+
+def test_patience_without_validation_data_is_an_error():
+    data = EnsembleDataset(signed_ensembles(20))
+    with pytest.raises(ValueError, match="patience"):
+        run_autoencoder(SubunitAutoencoder(4, 2), data, n_epochs=2, patience=1)

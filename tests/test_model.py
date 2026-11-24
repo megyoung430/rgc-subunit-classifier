@@ -55,6 +55,14 @@ def test_all_epochs_run_unless_patience_is_given():
     assert len(losses["valid"]) == 4  # first epoch sets the best, then 3 without improvement
 
 
+def balanced_bce(model, x, y):
+    with torch.no_grad():
+        p = model(torch.as_tensor(x, dtype=torch.float32)).flatten()
+        target = torch.as_tensor(y, dtype=torch.float32)
+        losses = nn.functional.binary_cross_entropy(p, target, reduction="none")
+    return 0.5 * (losses[target == 1].mean() + losses[target == 0].mean()).item()
+
+
 def test_reported_losses_exclude_the_l1_penalty():
     torch.manual_seed(0)
     x, y = separable(50)
@@ -64,8 +72,21 @@ def test_reported_losses_exclude_the_l1_penalty():
     with torch.no_grad():
         p = model(torch.as_tensor(x, dtype=torch.float32)).flatten()
         bce = nn.functional.binary_cross_entropy(p, torch.as_tensor(y, dtype=torch.float32))
-    assert losses["valid"][0] == pytest.approx(bce.item(), rel=1e-5)
     assert evaluate_classifier(model, data).loss == pytest.approx(bce.item(), rel=1e-5)
+    assert losses["valid"][0] == pytest.approx(balanced_bce(model, x, y), rel=1e-5)
+
+
+def test_validation_loss_weights_both_classes_equally():
+    torch.manual_seed(0)
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=(400, 2))
+    y = (x[:, 0] > 1.6).astype(int)            # about 5% spikes, as in the data
+    data = SpikeDataset(x, y)
+    model, losses, _ = run_model(SpikeClassifier(2, 3), train_set=data, valid_set=data,
+                                 batch_size=400, learning_rate=0.0, n_epochs=1)
+    assert losses["valid"][0] == pytest.approx(balanced_bce(model, x, y), rel=1e-5)
+    assert evaluate_classifier(model, data).balanced_loss == pytest.approx(
+        balanced_bce(model, x, y), rel=1e-5)
 
 
 def test_best_validation_weights_are_restored():
@@ -74,4 +95,11 @@ def test_best_validation_weights_are_restored():
     data = SpikeDataset(x, y)
     model, losses, _ = run_model(SpikeClassifier(2, 3), train_set=data, valid_set=data,
                                  batch_size=20, learning_rate=5.0, n_epochs=15)
-    assert evaluate_classifier(model, data).loss == pytest.approx(min(losses["valid"]), rel=1e-5)
+    assert evaluate_classifier(model, data).balanced_loss == pytest.approx(
+        min(losses["valid"]), rel=1e-5)
+
+
+def test_patience_without_validation_data_is_an_error():
+    x, y = separable(20)
+    with pytest.raises(ValueError, match="patience"):
+        run_model(SpikeClassifier(2, 3), train_set=SpikeDataset(x, y), n_epochs=2, patience=1)

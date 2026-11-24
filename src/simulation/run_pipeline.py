@@ -89,6 +89,7 @@ def run_subunit_model(
     l1_coefficient=0,
     l2_coefficient=0,
     random_state=0,
+    split_seed=0,
     max_trials=None,
     cache_dir=None,
     scheduler_step=None,
@@ -103,6 +104,13 @@ def run_subunit_model(
     no-spike frames equally often; the test set keeps the true spike rate,
     so judge it by ``test_balanced_accuracy`` or ``test_auc`` rather than
     ``test_accuracy``. Every epoch is run unless ``patience`` is given.
+    ``split_seed`` fixes which trials go to each set, separately from
+    ``random_state`` (network initialisation and sampling), so repeated runs
+    with different seeds are trained and tested on the same trials.
+
+    The STA, temporal filter, crop and mask are computed from all trials,
+    including the test trials, before the split; the test metrics are
+    therefore slightly optimistic, most noticeably with few trials.
 
     Frozen-stimulus LN/subunit evaluation is exposed separately in
     :mod:`src.prediction`. ``sta_path`` caches the STA; ``cache_dir`` caches
@@ -152,7 +160,7 @@ def run_subunit_model(
     )
 
     trial_ids = np.repeat(np.arange(num_trials), num_frames - filter_length)
-    train_index, valid_index, test_index = split_by_trial(trial_ids, random_state)
+    train_index, valid_index, test_index = split_by_trial(trial_ids, split_seed)
     train, valid, test = (
         SpikeDataset(examples[i], labels[i])
         for i in (train_index, valid_index, test_index)

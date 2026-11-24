@@ -48,7 +48,11 @@ class ClassifierMetrics:
     measures.
 
     Attributes:
-        loss: Mean binary cross-entropy, without regularization penalties.
+        loss: Mean binary cross-entropy at the true spike rate, without
+            regularization penalties.
+        balanced_loss: Binary cross-entropy averaged within each class and
+            then across the two classes, i.e. as if spikes were as common as
+            non-spikes, matching the balanced training (0.693 = chance).
         accuracy: Fraction of frames classified correctly at threshold 0.5.
         balanced_accuracy: Mean of the spike and no-spike hit rates.
         auc: Area under the ROC curve of the predicted spike probabilities
@@ -56,6 +60,7 @@ class ClassifierMetrics:
     """
 
     loss: float
+    balanced_loss: float
     accuracy: float
     balanced_accuracy: float
     auc: float
@@ -94,8 +99,15 @@ def _run_epoch(model, data_loader, l1_coeff=0.0, optimizer=None):
     return total_loss / total_samples, total_correct / total_samples
 
 
-def evaluate_classifier(model, dataset, batch_size=1024):
-    """Loss, accuracy, balanced accuracy and ROC AUC of ``model`` on ``dataset``."""
+def _balanced_bce(probabilities, labels):
+    """Binary cross-entropy averaged within each class, then across the classes."""
+    losses = nn.functional.binary_cross_entropy(probabilities, labels, reduction="none")
+    present = [losses[labels == value].mean() for value in (0.0, 1.0) if (labels == value).any()]
+    return torch.stack(present).mean()
+
+
+def _predict(model, dataset, batch_size):
+    """Spike probabilities and labels for every example of ``dataset``."""
     model.eval()
     device = next(model.parameters()).device
     probabilities, labels = [], []
@@ -105,13 +117,20 @@ def evaluate_classifier(model, dataset, batch_size=1024):
             labels.append(batch_labels.flatten())
     if not labels:
         raise ValueError("cannot evaluate a model on an empty dataset")
-    p, y = torch.cat(probabilities), torch.cat(labels)
+    return torch.cat(probabilities), torch.cat(labels)
+
+
+def evaluate_classifier(model, dataset, batch_size=1024):
+    """Losses, accuracy, balanced accuracy and ROC AUC of ``model`` on ``dataset``."""
+    p, y = _predict(model, dataset, batch_size)
     loss = nn.functional.binary_cross_entropy(p, y).item()
+    balanced_loss = _balanced_bce(p, y).item()
     p, y = p.numpy(), y.numpy().astype(int)
     predicted = (p >= 0.5).astype(int)
     auc = roc_auc_score(y, p) if len(np.unique(y)) == 2 else float("nan")
     return ClassifierMetrics(
         loss=loss,
+        balanced_loss=balanced_loss,
         accuracy=float((predicted == y).mean()),
         balanced_accuracy=float(balanced_accuracy_score(y, predicted)),
         auc=float(auc),
@@ -137,12 +156,20 @@ def run_model(
 ):
     """Train the classifier with SGD.
 
-    With validation data, the weights with the lowest validation loss are
-    restored at the end. Every epoch is run unless ``patience`` is given, in
-    which case training stops once the validation loss has failed to improve
-    by more than ``min_improvement`` for ``patience`` consecutive epochs.
-    Reported losses are data losses (binary cross-entropy) without the L1
-    term; L1 and L2 only shape the training objective.
+    The validation loss is the class-balanced binary cross-entropy (averaged
+    within spike and no-spike frames, then across the two), matching the
+    balanced training: at the true spike rate of a few percent, plain
+    cross-entropy mostly rewards predicting "no spike" and swings widely from
+    epoch to epoch. With validation data, the weights with the lowest
+    validation loss are restored at the end. Every epoch is run unless
+    ``patience`` is given, in which case training stops once the validation
+    loss has failed to improve by more than ``min_improvement`` for
+    ``patience`` consecutive epochs. Reported losses exclude the L1 term; L1
+    and L2 only shape the training objective. Training losses are at the
+    sampled (balanced) rate when a balanced sampler is used.
+
+    Raises:
+        ValueError: If ``patience`` is given without ``valid_set``.
 
     Returns:
         (model, losses, accuracies), the last two as ``{"train": [...],
@@ -150,6 +177,8 @@ def run_model(
     """
     if train_set is None:
         raise ValueError("train_set is required")
+    if patience is not None and valid_set is None:
+        raise ValueError("patience needs a valid_set to measure improvement on")
     if sampler is not None:
         shuffle = False
     training = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, sampler=sampler)
@@ -170,7 +199,9 @@ def run_model(
         accuracies["train"].append(train_accuracy)
         message = f"Epoch {epoch + 1}: loss={train_loss:.6g}, accuracy={train_accuracy:.3f}"
         if validation is not None:
-            valid_loss, valid_accuracy = _run_epoch(model, validation)
+            p, y = _predict(model, valid_set, max(batch_size, 1024))
+            valid_loss = _balanced_bce(p, y).item()
+            valid_accuracy = float(((p >= 0.5).float() == y).float().mean())
             losses["valid"].append(valid_loss)
             accuracies["valid"].append(valid_accuracy)
             message += f", val_loss={valid_loss:.6g}, val_accuracy={valid_accuracy:.3f}"

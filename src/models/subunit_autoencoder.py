@@ -119,9 +119,14 @@ def run_autoencoder(
     by more than ``min_improvement`` for ``patience`` consecutive epochs.
     Reported losses are reconstruction errors without the penalties.
 
+    Raises:
+        ValueError: If ``patience`` is given without ``valid_set``.
+
     Returns:
         (model, losses) with losses as ``{"train": [...], "valid": [...]}``.
     """
+    if patience is not None and valid_set is None:
+        raise ValueError("patience needs a valid_set to measure improvement on")
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     valid_loader = (
         DataLoader(valid_set, batch_size=batch_size, shuffle=False)
