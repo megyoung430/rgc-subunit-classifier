@@ -40,6 +40,7 @@ class PipelineResult:
     test_accuracy: float
     test_balanced_accuracy: float
     test_auc: float
+    test_balanced_loss: float
     split_trials: dict
     morans_i: np.ndarray
 
@@ -197,7 +198,7 @@ def run_subunit_model(
         model, subunits, node_weights, sta, spatial_sta, temporal_sta, crop,
         ellipse_mask, losses, accuracies, min(losses["valid"]),
         metrics.loss, metrics.accuracy,
-        metrics.balanced_accuracy, metrics.auc,
+        metrics.balanced_accuracy, metrics.auc, metrics.balanced_loss,
         {name: np.unique(trial_ids[index]) for name, index in
          (("train", train_index), ("valid", valid_index), ("test", test_index))},
         morans_values,

@@ -24,7 +24,7 @@ SUMMARY_FIELDS = [
     "run_id", "status", "model", "cell", "seed", "node_num",
     "l1_coefficient", "l2_coefficient", "learning_rate", "batch_size", "sigma",
     "fraction", "max_trials", "num_epochs", "subunit_count",
-    "validation_loss", "test_loss", "test_balanced_accuracy", "test_auc",
+    "validation_loss", "test_loss", "test_balanced_loss", "test_balanced_accuracy", "test_auc",
     "code_version", "artifact", "error",
 ]
 SRC_ROOT = Path(__file__).resolve().parents[1]
@@ -160,6 +160,7 @@ def _result_row(result):
         "test_loss": result.test_loss,
         "test_balanced_accuracy": getattr(result, "test_balanced_accuracy", ""),
         "test_auc": getattr(result, "test_auc", ""),
+        "test_balanced_loss": getattr(result, "test_balanced_loss", ""),
         "subunit_count": len(result.subunits),
     }
 

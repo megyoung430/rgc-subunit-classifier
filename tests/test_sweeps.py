@@ -135,7 +135,8 @@ def fake_result(result_type, **values):
 
 def classifier_result():
     return fake_result(PipelineResult, accuracies={"train": [], "valid": []},
-                       test_accuracy=0.9, test_balanced_accuracy=0.7, test_auc=0.8)
+                       test_accuracy=0.9, test_balanced_accuracy=0.7, test_auc=0.8,
+                       test_balanced_loss=0.6)
 
 
 def test_summary_rows_report_the_same_measures_for_both_models(tmp_path, monkeypatch):
@@ -150,6 +151,7 @@ def test_summary_rows_report_the_same_measures_for_both_models(tmp_path, monkeyp
         assert row["status"] == "complete"
         assert row["validation_loss"] == 0.55 and row["test_loss"] == 0.58
     assert by_model["classifier"]["test_balanced_accuracy"] == 0.7
+    assert by_model["classifier"]["test_balanced_loss"] == 0.6
     assert by_model["autoencoder"]["test_balanced_accuracy"] == ""
     with np.load(by_model["classifier"]["artifact"]) as saved:
         np.testing.assert_array_equal(saved["morans_i"], [0.3, 0.1])

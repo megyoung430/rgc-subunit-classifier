@@ -54,14 +54,17 @@ Classifier result fields:
 | `subunits` | Moran-selected weights |
 | `sta`, `spatial_sta`, `temporal_sta` | STA components |
 | `crop`, `ellipse_mask` | Spatial reference |
-| `losses`, `accuracies` | Per-epoch train/validation curves |
-| `test_loss`, `test_accuracy` | Held-out loss (no L1 term) and plain accuracy |
+| `losses`, `accuracies` | Per-epoch train/validation curves (validation loss is class-balanced) |
+| `validation_loss` | Lowest class-balanced validation loss (the restored weights) |
+| `test_loss`, `test_accuracy` | Held-out loss at the natural spike rate (no L1 term) and plain accuracy |
+| `test_balanced_loss` | Held-out class-balanced loss, comparable with `validation_loss` (0.693 = chance) |
 | `test_balanced_accuracy`, `test_auc` | Class-balanced held-out metrics (0.5 = chance) |
 | `split_trials` | Trials in the train, valid and test sets |
+| `morans_i` | Moran's I of every node, inside the ellipse mask |
 
 Autoencoder result fields are analogous, with `validation_loss` (restored
-state; class-balanced cross-entropy for the classifier), `test_loss` (held-out trials) and `n_examples` replacing the
-classifier's accuracy metrics.
+state), `test_loss` (held-out trials), `input_scale` and `n_examples` replacing
+the classifier's accuracy metrics.
 
 ## Hyperparameter sweeps
 
@@ -123,6 +126,7 @@ refused: use a new output folder.
 Summary columns are the same for both models: `validation_loss` (restored
 state; class-balanced cross-entropy for the classifier), `test_loss` (held-out trials; cross-entropy for the classifier,
 reconstruction error for the autoencoder), and for the classifier
+`test_balanced_loss` (comparable with its `validation_loss`),
 `test_balanced_accuracy` and `test_auc`. Artifacts contain spatial weights,
 selected subunits, each node's Moran's I, the ellipse mask, losses, available
 accuracies and the trials in each split. The CSV is the experiment index; do not rename artifacts
