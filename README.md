@@ -198,7 +198,7 @@ result = run_subunit_model(
     cell_num=0,
     data_path="data/cell_data_01_NC.mat",
     stim_path="data/stimulus_data",
-    sta_path="results/sta",
+    sta_path="results/sta_cache",
     node_num=60,
     learning_rate=0.5,
     num_epochs=100,
@@ -219,7 +219,7 @@ result = run_autoencoder_model(
     cell_num=0,
     data_path="data/cell_data_01_NC.mat",
     stim_path="data/stimulus_data",
-    sta_path="results/sta",
+    sta_path="results/sta_cache",
     node_num=60,
     learning_rate=0.001,
     num_epochs=100,
@@ -290,7 +290,7 @@ scores among layouts with the modal number of subunits.
 ├── data/                         spike counts and white-noise stimuli
 ├── docs/                         installation, data, methods, workflows, audit
 ├── imported_from_colab/          ignored historical source archive
-├── results/                      saved STAs and historical/generated outputs
+├── results/                      new outputs (git-ignored) and colab_legacy/ archive
 ├── scripts/                      tutorials, smoke run, and sweep entry points
 ├── src/
 │   ├── analysis/                 ellipse, Moran's I, stability, metrics, sweeps

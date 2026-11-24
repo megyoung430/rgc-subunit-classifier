@@ -20,7 +20,7 @@ def parser():
     command.add_argument("--batch-size", type=int, default=100)
     command.add_argument("--data", default="data/cell_data_01_NC.mat")
     command.add_argument("--stimuli", default="data/stimulus_data")
-    command.add_argument("--sta", default="results/sta")
+    command.add_argument("--sta", default="results/sta_cache")
     command.add_argument("--output", default="results/sweeps/data_fractions")
     command.add_argument("--dry-run", action="store_true")
     command.add_argument("--fail-fast", action="store_true")

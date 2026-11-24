@@ -45,8 +45,26 @@ def test_dry_run_reads_trial_count_without_training(tmp_path):
     )
     planned = run_sweep(
         config, data_path="data/cell_data_01_NC.mat",
-        stim_path="data/stimulus_data", sta_path="results/sta",
+        stim_path="data/stimulus_data", sta_path="results/sta_cache",
         output_dir=tmp_path, batch_size=2, dry_run=True,
     )
     assert planned[0]["max_trials"] == 22
     assert not (tmp_path / "summary.csv").exists()
+
+
+def test_sweep_output_inside_archive_is_refused(tmp_path, monkeypatch):
+    import src.outputs
+
+    archive = tmp_path / "results" / "colab_legacy"
+    monkeypatch.setattr(src.outputs, "ARCHIVE", archive)
+    config = experiment_grid(
+        models=["classifier"], cells=[0], seeds=[0], node_nums=[2],
+        l1_coefficients=[0], l2_coefficients=[0], learning_rates=[0.1],
+        sigmas=[3], fractions=[1.0], num_epochs=1,
+    )
+    with pytest.raises(PermissionError):
+        run_sweep(
+            config, data_path="data/cell_data_01_NC.mat",
+            stim_path="data/stimulus_data", sta_path=None,
+            output_dir=archive / "sweeps", batch_size=2,
+        )

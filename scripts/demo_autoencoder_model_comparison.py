@@ -2,13 +2,13 @@
 
 import argparse
 import json
-from pathlib import Path
 
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.io import loadmat
 
 from src.analysis.model_comparison import prediction_metrics
+from src.outputs import check_output_dir
 from src.prediction.sta_model_predictions import gen_sta_model, get_sta_predictions
 from src.prediction.subunit_model_predictions import (
     gen_subunit_model, get_subunit_predictions,
@@ -23,7 +23,7 @@ def build_parser():
     parser.add_argument("--cell", type=int, default=0)
     parser.add_argument("--data", default="data/cell_data_01_NC.mat")
     parser.add_argument("--stimuli", default="data/stimulus_data")
-    parser.add_argument("--sta", default="results/sta")
+    parser.add_argument("--sta", default="results/sta_cache")
     parser.add_argument("--output", default="results/demo_autoencoder_model_comparison")
     parser.add_argument("--nodes", type=int, default=60)
     parser.add_argument("--epochs", type=int, default=100)
@@ -42,7 +42,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    output = Path(args.output)
+    output = check_output_dir(args.output)
     output.mkdir(parents=True, exist_ok=True)
     width, height, refresh_rate = 200, 150, 30
     filter_length = int(0.67 * refresh_rate)
@@ -51,14 +51,9 @@ def main(argv=None):
     num_frames, total_trials = spikecounts.shape
     num_trials = total_trials if args.max_trials is None else min(args.max_trials, total_trials)
     spikecounts = spikecounts[:, :num_trials]
-    names = {
-        "spatial_sta_filename": f"Cell {args.cell} Uncropped Spatial STA.h5",
-        "temp_sta_filename": f"Cell {args.cell} Uncropped Temp STA.h5",
-        "sta_filename": f"Cell {args.cell} Uncropped STA.h5",
-    }
     sta, spatial_sta, temporal_sta = gen_sta(
         width, height, spikecounts, args.cell, filter_length, num_frames,
-        num_trials, sta_path=args.sta, stim_path=args.stimuli, **names,
+        num_trials, sta_path=args.sta, stim_path=args.stimuli,
     )
     cropped_sta, crop, _ = crop_sta(spatial_sta, args.sigma)
     crop_shape = cropped_sta.shape

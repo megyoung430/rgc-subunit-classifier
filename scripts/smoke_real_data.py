@@ -9,7 +9,7 @@ def main():
         cell_num=0,
         data_path="data/cell_data_01_NC.mat",
         stim_path="data/stimulus_data",
-        sta_path="results/sta",
+        sta_path="results/sta_cache",
         node_num=3,
         num_epochs=2,
         max_trials=2,

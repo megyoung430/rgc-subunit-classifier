@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 
+from ..outputs import check_new_output, check_output_dir
 from ..simulation.run_autoencoder_pipeline import run_autoencoder_model
 from ..simulation.run_pipeline import run_subunit_model
 
@@ -83,6 +84,7 @@ def _append_summary(path, row):
 
 
 def _save_artifact(path, result):
+    path = check_new_output(path)
     losses = result.losses
     arrays = {
         "node_weights": result.node_weights,
@@ -114,7 +116,7 @@ def run_sweep(
     Completed run IDs in ``summary.csv`` are skipped, so interrupted sweeps can
     be resumed with the same command. Failed rows are retried on the next run.
     """
-    output_dir = Path(output_dir)
+    output_dir = check_output_dir(output_dir)
     artifact_dir = output_dir / "artifacts"
     summary_path = output_dir / "summary.csv"
     total_trials = loadmat(data_path, variable_names=["spk1"])["spk1"].shape[2]
