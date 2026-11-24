@@ -38,15 +38,19 @@ over lag. This produces one scalar per spatial pixel.
 ### Classifier data
 
 Every frame `t >= L` contributes an example. Its label is one if the spike count
-is nonzero and zero otherwise. The train/validation/test splits are stratified.
-A weighted sampler gives spike and no-spike classes equal expected sampling
+is nonzero and zero otherwise. Examples are split into training, validation and
+test sets by whole trials (25% of trials for testing, 25% of the rest for
+validation), because consecutive frames share most of their stimulus history and
+a frame-by-frame split would put near-copies of training examples in the test
+set. A weighted sampler gives spike and no-spike classes equal expected sampling
 frequency during training.
 
 ### Autoencoder data
 
 Only frames with nonzero spike count contribute. One frame contributes one
 example regardless of spike multiplicity. This reproduces the notebook's
-event-triggered ensemble definition.
+event-triggered ensemble definition. Ensembles are split by whole trials in the
+same way as the classifier's examples.
 
 ## Classifier
 
@@ -56,27 +60,58 @@ masked pixels → Linear(nodes) → ReLU → Linear(1) → sigmoid probability
 
 Binary cross-entropy is optimized with SGD. L1 regularization applies to the
 first-layer weights; L2 is optimizer weight decay. An optional step scheduler
-reduces the learning rate. The state with best validation loss is restored.
+reduces the learning rate. Every epoch is run unless `patience` is set, in
+which case training stops after that many epochs without an improvement in
+validation loss larger than `min_improvement`. The state with best validation
+loss is restored. Reported losses are binary cross-entropy without the L1 term,
+so they can be compared across regularization settings. The validation loss is
+class-balanced (spike and no-spike examples weighted equally), because the
+validation set keeps its natural imbalance and plain cross-entropy would pick
+the epoch that best predicts "no spike". Setting `patience` without a
+validation set is an error.
 
-Classifier test accuracy is not a sufficient model-quality statistic because
-spikes are rare and the held-out set retains its natural imbalance. Inspect loss,
-class-sensitive measures if added, learned maps, repeated-run stability, and the
+Trials are assigned to the training, validation and test sets by `split_seed`
+(default 0), separately from `random_state`, which sets the network
+initialization and sampling. Runs with different `random_state` values are
+therefore compared on the same held-out trials.
+
+The STA, temporal filter, crop and mask are computed from all trials before
+the split, so the test trials contribute a little to the features the model
+sees. Test metrics are slightly optimistic as a result, most noticeably with
+few trials.
+
+Test accuracy is not a useful model-quality statistic on its own: spikes are
+rare and the held-out set keeps its natural imbalance, so always predicting
+"no spike" scores about 95%. The pipeline also reports balanced accuracy (mean
+of the two classes' hit rates; 0.5 is chance) and ROC AUC (0.5 is chance).
+Inspect these alongside the learned maps, repeated-run stability, and the
 derived encoding model's frozen-noise prediction.
 
 ## Autoencoder
 
 ```text
 masked spike-triggered pixels → Linear(nodes) → ReLU
-                              → Linear(pixels) → sigmoid or linear reconstruction
+                              → Linear(pixels) → linear (default) or sigmoid reconstruction
 ```
 
 Mean squared reconstruction error is optimized with Adam. Available penalties
 are encoder-weight L1, optimizer L2, and a differentiable neighbor-aware spatial
-penalty. The state with best validation reconstruction loss is restored.
+penalty. Early stopping and best-state restoration work as for the classifier,
+and reported losses exclude the penalties. `validation_loss` is the restored
+state's validation error; `test_loss` is the error on held-out test trials.
 
-The historical sigmoid decoder is retained. Since temporally filtered inputs can
-be negative, a linear decoder is also available and should be evaluated as an
-explicit model variant rather than silently replacing the historical behavior.
+The ensembles are divided by the standard deviation of the training ensembles
+(`input_scale`) before training. A temporally filtered ensemble has a mean
+square of about 1/L² for an L-lag unit-norm filter (about 0.0025 for 20 lags),
+so on the raw scale an encoder L1 penalty of 1e-4 outweighs the whole
+reconstruction error and every weight shrinks to zero. On the scaled inputs
+predicting zero gives a loss of 1.0, which is the reference line for the
+reported losses.
+
+The decoder is linear by default. The temporally filtered ensembles are
+zero-centred, so the Colab notebook's sigmoid decoder (outputs between 0 and 1)
+cannot reconstruct their negative half; it remains available as
+`output_activation="sigmoid"` for comparison.
 
 ## Candidate subunit selection
 

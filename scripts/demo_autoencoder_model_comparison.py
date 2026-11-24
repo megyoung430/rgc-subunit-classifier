@@ -35,7 +35,7 @@ def build_parser():
     parser.add_argument("--l1", type=float, default=0.0001)
     parser.add_argument("--l2", type=float, default=0)
     parser.add_argument("--spatial-regularization", type=float, default=0)
-    parser.add_argument("--output-activation", choices=["sigmoid", "linear"], default="sigmoid")
+    parser.add_argument("--output-activation", choices=["linear", "sigmoid"], default="linear")
     parser.add_argument("--sigma", type=float, default=3)
     parser.add_argument("--morans-threshold", type=float, default=0.25)
     parser.add_argument("--seed", type=int, default=0)
@@ -144,6 +144,7 @@ def main(argv=None):
         "autoencoder": {
             "nodes": args.nodes, "selected_subunits": len(autoencoder.subunits),
             "validation_loss": autoencoder.validation_loss,
+            "test_loss": autoencoder.test_loss,
             "output_activation": args.output_activation,
         },
         "ln_model": {

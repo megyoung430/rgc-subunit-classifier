@@ -105,7 +105,7 @@ def run_sweep(
     sta_path,
     output_dir,
     batch_size,
-    stop_threshold=1e-5,
+    patience=None,
     cache_dir=None,
     dry_run=False,
     continue_on_error=True,
@@ -130,7 +130,7 @@ def run_sweep(
         config["max_trials"] = fraction_to_trials(config["fraction"], total_trials)
         identity = {
             **config, "batch_size": batch_size,
-            "stop_threshold": stop_threshold,
+            "patience": patience,
             "data_path": str(Path(data_path).resolve()),
             "stim_path": str(Path(stim_path).resolve()),
             "sta_path": str(Path(sta_path).resolve()) if sta_path else None,
@@ -152,7 +152,7 @@ def run_sweep(
             node_num=int(config["node_num"]), batch_size=batch_size,
             learning_rate=float(config["learning_rate"]),
             num_epochs=int(config["num_epochs"]),
-            stop_threshold=stop_threshold,
+            patience=patience,
             l1_coefficient=float(config["l1_coefficient"]),
             l2_coefficient=float(config["l2_coefficient"]),
             sigma=float(config["sigma"]), random_state=int(config["seed"]),

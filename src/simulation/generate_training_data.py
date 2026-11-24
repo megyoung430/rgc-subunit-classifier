@@ -335,13 +335,16 @@ def gen_eses(
     This matches the autoencoder notebook: a frame with one or more spikes
     contributes one example (spike multiplicity does not duplicate examples).
     ``stimuli`` is an optional preloaded cropped stimulus, as in :func:`gen_ses`.
+
+    Returns:
+        (examples, trial of each example).
     """
     crop_x, crop_y = np.asarray(sta_cropped).shape
     if stimuli is not None:
         check_stimuli(stimuli, crop_x * crop_y, num_frames, num_trials)
     elif stim_path is None:
         raise ValueError("stim_path or stimuli is required")
-    examples = []
+    examples, trials = [], []
     mask = np.asarray(ell_pixels, dtype=bool).ravel()
     for trial in range(num_trials):
         stimulus = _cropped_trial(
@@ -353,9 +356,10 @@ def gen_eses(
             frames = stimulus[:, frame-filter_length:frame]
             current = np.mean(frames * np.asarray(temp_sta), axis=1)
             examples.append(current[mask])
+            trials.append(trial)
     if not examples:
         raise ValueError("no spike-triggered ensembles were generated")
-    return np.asarray(examples)
+    return np.asarray(examples), np.asarray(trials)
 
 
 # Backwards-compatible names used by the exported notebook.

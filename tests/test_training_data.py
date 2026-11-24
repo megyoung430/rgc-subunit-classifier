@@ -44,13 +44,14 @@ def test_gen_eses_keeps_only_spike_frames_once(tmp_path):
     stimulus = np.array([[1, 2, 3, 4], [10, 20, 30, 40]])
     save_stimulus(tmp_path, 0, stimulus)
     spikes = np.array([[0], [0], [3], [0]])
-    examples = gen_eses(
+    examples, trials = gen_eses(
         2, 1, spikes, np.array([1.0, -1.0]), np.ones((2, 1)),
         (slice(0, 2), slice(0, 1)), np.array([[True], [False]]),
         2, 4, 1, tmp_path,
     )
     # A count of three still creates one autoencoder example, as in the notebook.
     assert examples.shape == (1, 1)
+    np.testing.assert_array_equal(trials, [0])
     np.testing.assert_allclose(examples[0], [-0.5])
 
 
@@ -145,9 +146,8 @@ def test_ensembles_from_preloaded_stimuli_match_file_loading(tmp_path):
     from_array = gen_ses(*args, stimuli=preloaded)
     for a, b in zip(from_files, from_array):
         np.testing.assert_array_equal(a, b)
-    np.testing.assert_array_equal(
-        gen_eses(*args, tmp_path), gen_eses(*args, None, stimuli=preloaded)
-    )
+    for a, b in zip(gen_eses(*args, tmp_path), gen_eses(*args, None, stimuli=preloaded)):
+        np.testing.assert_array_equal(a, b)
 
 
 def test_preloaded_stimuli_with_the_wrong_crop_are_rejected(tmp_path):

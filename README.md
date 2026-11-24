@@ -207,7 +207,7 @@ result = run_subunit_model(
     random_state=0,
 )
 
-print(result.test_accuracy)
+print(result.test_balanced_accuracy, result.test_auc)
 print(result.node_weights.shape, result.subunits.shape)
 ```
 
@@ -226,11 +226,10 @@ result = run_autoencoder_model(
     learning_rate=0.001,
     num_epochs=100,
     l1_coefficient=1e-4,
-    output_activation="sigmoid",
     random_state=0,
 )
 
-print(result.validation_loss)
+print(result.validation_loss, result.test_loss)
 print(result.node_weights.shape, result.subunits.shape)
 ```
 
@@ -314,13 +313,16 @@ scores among layouts with the modal number of subunits.
 - Spike counts weight the STA, whereas classifier labels are binary.
 - Autoencoder examples include one ensemble per nonzero spike-count frame;
   multiplicity does not duplicate examples, preserving notebook behavior.
-- Classifier training uses balanced sampling, stratified splits, and restores
-  the best validation-loss weights.
+- Both models split examples by whole trials into training, validation and
+  test sets, run every epoch unless `patience` is set, restore the best
+  validation-loss weights, and report losses without regularization terms.
+  Classifier training uses balanced sampling; judge it by balanced accuracy or
+  ROC AUC, not plain accuracy.
 - L1 applies to first-layer/encoder weights; L2 is optimizer weight decay.
 - The autoencoder's spatial penalty is differentiable. The notebook version
   detached weights to NumPy and therefore supplied no gradient.
-- `output_activation="sigmoid"` reproduces the autoencoder notebook. Because
-  filtered ensembles may be negative, `"linear"` is an explicit model variant.
+- The autoencoder decoder is linear by default, because the filtered ensembles
+  are zero-centred; `output_activation="sigmoid"` reproduces the notebook.
 - Crop boundaries are clipped to image bounds rather than allowing negative
   NumPy slices to wrap around the opposite edge.
 - Moran's-I threshold, crop sigma, node count, regularization, seed, data
