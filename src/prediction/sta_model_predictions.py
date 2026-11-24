@@ -19,6 +19,33 @@ def nonlin(x, a1, a2, a3):
     return a1 * np.logaddexp(0, a2 * (np.asarray(x) + a3))
 
 
+def ln_drive(stimulus, stac, filter_length):
+    """Linear drive of the LN model for one trial.
+
+    Args:
+        stimulus: Cropped stimulus, pixels × frames.
+        stac: Cropped spatiotemporal STA, pixels × ``filter_length`` (the
+            last lag is the frame just before the predicted one).
+        filter_length: Number of past frames in the filter.
+
+    Returns:
+        The drive for frames ``filter_length`` to the end: each is the sum over
+        pixels and lags of the STA times the preceding ``filter_length`` frames.
+    """
+    windows = np.lib.stride_tricks.sliding_window_view(
+        np.asarray(stimulus, dtype=float), filter_length, axis=1
+    )[:, :-1]
+    return np.einsum("pwl,pl->w", windows, np.asarray(stac, dtype=float))
+
+
+def binned_response(filtered, counts, dt, num_bins=40):
+    """Mean drive and mean firing rate in quantile bins of the drive.
+
+    These points are what the output nonlinearity is fitted to.
+    """
+    return _binned_response(filtered, counts, dt, num_bins)
+
+
 def _binned_response(filtered, counts, dt, num_bins=40):
     edges = np.quantile(filtered, np.linspace(0, 1, num_bins + 1)[1:-1])
     groups = np.digitize(filtered, edges)
@@ -123,14 +150,12 @@ def gen_sta_model(
     """
     if stimuli is not None:
         check_stimuli(stimuli, crop_x * crop_y, num_frames, num_trials)
-    filtered = []
-    for trial in range(num_trials):
-        stimulus = _trial(stimuli, stim_path, trial, x, y, num_frames, crop)
-        for frame in range(filter_length, num_frames):
-            frames = stimulus[:, frame-filter_length:frame]
-            filtered.append(np.asarray(stac).flatten("F").dot(frames.flatten("F")))
+    filtered = np.concatenate([
+        ln_drive(_trial(stimuli, stim_path, trial, x, y, num_frames, crop), stac, filter_length)
+        for trial in range(num_trials)
+    ])
     counts = np.asarray(spikecounts)[filter_length:, :].T.ravel()
-    centers, rates = _binned_response(np.asarray(filtered), counts, dt)
+    centers, rates = _binned_response(filtered, counts, dt)
     if len(centers) < 3:
         raise ValueError("not enough populated response bins to fit the STA model")
     return fit_softplus(centers, rates)
@@ -150,12 +175,7 @@ def get_sta_predictions(
         cell_num, crop, data_path, stim_frz_path, cache_dir
     )
     num_frames = spikecounts.shape[0]
-    predictions = []
-    for frame in range(filter_length, num_frames):
-        frames = stimulus[:, frame-filter_length:frame]
-        value = np.asarray(stac).flatten("F").dot(frames.flatten("F"))
-        predictions.append(nonlin(value, *params_sta))
-    predictions = np.asarray(predictions)
+    predictions = nonlin(ln_drive(stimulus, stac, filter_length), *params_sta)
     actual = spikecounts.mean(axis=1) / dt
     correlation = np.corrcoef(actual[filter_length:], predictions)[0, 1]
     return predictions, correlation, actual, np.arange(num_frames) * dt

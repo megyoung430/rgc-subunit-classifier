@@ -21,7 +21,14 @@ from src.prediction.subunit_model_predictions import (
 )
 from src.simulation.generate_training_data import crop_sta, gen_sta
 from src.simulation.run_autoencoder_pipeline import run_autoencoder_model
-from src.visualization.plotting_fxns import plot_predictions, plot_subunits
+from src.visualization.plotting_fxns import (
+    MODEL_COLORS,
+    outside_legend,
+    plot_predictions,
+    plot_subunits,
+    save_figure,
+    use_style,
+)
 
 
 def build_parser():
@@ -49,6 +56,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    use_style()
     output = check_output_dir(args.output)
     output.mkdir(parents=True, exist_ok=True)
     width, height, refresh_rate = 200, 150, 30
@@ -116,13 +124,17 @@ def main(argv=None):
         ellipse_mask=autoencoder.ellipse_mask,
     )
     figure, _ = plot_subunits(autoencoder.node_weights, crop_shape)
-    figure.suptitle("All autoencoder encoder weights")
-    figure.savefig(output / "autoencoder_node_weights.png", dpi=180)
+    figure.suptitle("All Autoencoder Encoder Weights")
+    save_figure(figure, output / "autoencoder_node_weights", caption=(
+        "Spatial weight map of every autoencoder node on the cropped window (red positive, "
+        "blue negative)."))
     plt.close(figure)
     if len(autoencoder.subunits):
         figure, _ = plot_subunits(autoencoder.subunits, crop_shape)
-        figure.suptitle("Moran's-I-selected autoencoder subunits")
-        figure.savefig(output / "selected_subunits.png", dpi=180)
+        figure.suptitle("Moran's-I-Selected Autoencoder Subunits")
+        save_figure(figure, output / "selected_subunits", caption=(
+            f"Autoencoder nodes whose Moran's I (inside the ellipse mask) exceeds "
+            f"{args.morans_threshold}."))
         plt.close(figure)
     else:
         raise RuntimeError(
@@ -149,11 +161,16 @@ def main(argv=None):
 
     print("4/4 Saving frozen-noise comparison...")
     figure, axis = plt.subplots(figsize=(10, 4))
-    plot_predictions(ln_predictions, actual, time, filter_length, label="LN (separable)", ax=axis)
-    axis.plot(time[filter_length:], subunit_predictions, label="Autoencoder subunit model")
-    axis.legend()
+    plot_predictions(ln_predictions, actual, time, filter_length, label="Separable LN",
+        color=MODEL_COLORS["LN"], ax=axis)
+    axis.plot(time[filter_length:], subunit_predictions, label="Autoencoder Subunit Model",
+        color=MODEL_COLORS["Autoencoder Subunit"])
+    outside_legend(axis)
     figure.tight_layout()
-    figure.savefig(output / "frozen_noise_predictions.png", dpi=180)
+    save_figure(figure, output / "frozen_noise_predictions", caption=(
+        f"Measured frozen-noise firing rate of cell {args.cell} with the separable LN and "
+        f"autoencoder subunit model predictions. LN r = {ln_metrics.correlation:.3f}, subunit r = "
+        f"{subunit_metrics.correlation:.3f}, noise ceiling {ceiling.max_correlation:.3f}."))
     plt.close(figure)
 
     summary = {
