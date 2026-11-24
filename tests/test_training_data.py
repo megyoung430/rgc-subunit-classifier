@@ -124,3 +124,14 @@ def test_sta_cache_cannot_be_combined_with_generated_stimuli(tmp_path):
         gen_sta(2, 1, np.zeros((3, 1)), 0, 2, 3, 1, sta_path=tmp_path,
                 generate_stimuli=True, running_seed=0,
                 stimulus_generator=lambda seed, n: (np.ones(n), seed))
+
+
+def test_sta_cache_written_by_another_run_meanwhile_is_not_an_error(tmp_path, monkeypatch):
+    def already_written(path, write):
+        raise FileExistsError(path)
+
+    monkeypatch.setattr(training_data, "write_new_file", already_written)
+    save_stimulus(tmp_path, 0, np.array([[1, -1, 1], [-1, 1, -1]]))
+    sta, _, _ = gen_sta(2, 1, np.array([[0], [0], [1]]), 0, 2, 3, 1,
+                        stim_path=tmp_path, sta_path=tmp_path / "cache")
+    np.testing.assert_array_equal(sta, [[1, -1], [-1, 1]])

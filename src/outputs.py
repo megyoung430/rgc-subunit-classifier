@@ -1,7 +1,9 @@
 """Guards for writing outputs.
 
-Nothing may be written inside the saved Colab archive, and file writers create
-new files only: they never replace an existing one.
+Nothing may be written inside the saved Colab archive. Files written through
+:func:`write_new_file` (caches, saved subunits, sweep artifacts) are created
+whole and never replace an existing file; the demo scripts' figures and
+summaries are ordinary outputs and are rewritten on each run.
 """
 
 import errno
@@ -15,6 +17,10 @@ ARCHIVE = REPO_ROOT / "results" / "colab_legacy"
 # Committed inside the archive, so any copy of the repo (another clone, a
 # worktree, an installed package run from elsewhere) recognises its archive.
 ARCHIVE_MARKER = ".read-only-archive"
+# errno values with which link() reports that the file system has no hard links.
+NO_HARD_LINKS = frozenset(
+    {errno.EPERM, errno.ENOTSUP, errno.EOPNOTSUPP, errno.EXDEV, errno.ENOSYS}
+)
 
 
 def _inside_archive(path, archive) -> bool:
@@ -66,12 +72,21 @@ def _publish(temporary: Path, path: Path) -> None:
     except FileExistsError:
         raise FileExistsError(f"{path} already exists; refusing to overwrite it") from None
     except OSError as error:
-        # Some network and FAT file systems cannot hard-link.
-        if error.errno not in (errno.EPERM, errno.ENOTSUP, errno.EXDEV, errno.EOPNOTSUPP):
+        # Some network, FUSE and FAT file systems cannot hard-link.
+        if error.errno not in NO_HARD_LINKS:
             raise
         if path.exists():
             raise FileExistsError(f"{path} already exists; refusing to overwrite it") from None
+        # Without hard links the check and the rename are two steps: a file
+        # written by another run in between would be replaced. For the caches
+        # this is harmless (both runs write the same values).
         os.replace(temporary, path)
+
+
+def _current_umask() -> int:
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
 
 
 def write_new_file(path, write, archive=None) -> Path:
@@ -94,6 +109,9 @@ def write_new_file(path, write, archive=None) -> Path:
     temporary = Path(name)
     try:
         write(temporary)
+        # mkstemp creates the file owner-only; give it the permissions any
+        # newly created file would get, so labmates can read shared results.
+        os.chmod(temporary, 0o666 & ~_current_umask())
         _publish(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)

@@ -1,3 +1,7 @@
+import errno
+import os
+import stat
+
 import pytest
 
 from src.outputs import (
@@ -75,3 +79,41 @@ def test_write_new_file_temporary_keeps_the_suffix(tmp_path):
     write_new_file(tmp_path / "a.npz", lambda temporary: seen.append(temporary.suffix)
                    or temporary.write_bytes(b"x"), archive=tmp_path / "archive")
     assert seen == [".npz"]
+
+
+def _umask():
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
+def test_written_files_follow_the_umask(tmp_path):
+    target = write_new_file(tmp_path / "a.bin", lambda t: t.write_bytes(b"x"),
+                            archive=tmp_path / "archive")
+    assert stat.S_IMODE(target.stat().st_mode) == 0o666 & ~_umask()
+
+
+@pytest.mark.parametrize("code", [errno.EPERM, errno.ENOSYS, errno.ENOTSUP])
+def test_filesystems_without_hard_links_fall_back(tmp_path, monkeypatch, code):
+    def no_links(src, dst):
+        raise OSError(code, os.strerror(code))
+
+    monkeypatch.setattr(os, "link", no_links)
+    target = write_new_file(tmp_path / "a.bin", lambda t: t.write_bytes(b"x"),
+                            archive=tmp_path / "archive")
+    assert target.read_bytes() == b"x"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o666 & ~_umask()
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_file_appearing_during_the_write_is_not_replaced(tmp_path):
+    target = tmp_path / "a.bin"
+
+    def other_run_finishes_first(temporary):
+        target.write_bytes(b"theirs")
+        temporary.write_bytes(b"ours")
+
+    with pytest.raises(FileExistsError):
+        write_new_file(target, other_run_finishes_first, archive=tmp_path / "archive")
+    assert target.read_bytes() == b"theirs"
+    assert list(tmp_path.iterdir()) == [target]
