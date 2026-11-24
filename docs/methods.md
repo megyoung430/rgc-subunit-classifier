@@ -24,11 +24,11 @@ location. Both are normalized to unit Euclidean norm.
 
 ## Spatial crop
 
-A correlated 2-D Gaussian is fitted to the spatial STA. An ellipse at `sigma`
-Mahalanobis standard deviations defines a rectangular crop and an interior
-pixel mask. Crop boundaries are clipped to the image. Only masked pixels enter
-the neural models; learned compact weights are expanded back into the rectangle
-with zeros outside the ellipse.
+A correlated 2-D Gaussian is fitted to the spatial STA. The ellipse at `sigma`
+Mahalanobis standard deviations defines the mask: every pixel whose centre lies
+inside the ellipse, clipped to the image. The crop is the mask's bounding box.
+Only masked pixels enter the networks; full-crop weights are reconstructed with
+zeros outside the ellipse.
 
 ## Temporally filtered ensembles
 

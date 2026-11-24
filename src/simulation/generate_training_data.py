@@ -7,6 +7,7 @@ from typing import Callable
 
 import h5py
 import numpy as np
+import shapely
 
 from ..analysis.fitellipse import fitellipse
 from ..data_cache import check_stimuli
@@ -219,32 +220,39 @@ def gen_sta(
     return sta, spatial_sta, temp_sta
 
 
-def crop_sta(spatial_sta, sigma_coeff=1.5):
-    """Crop a spatial STA to a fitted Gaussian ellipse and return its mask."""
-    ellipse = fitellipse(spatial_sta, sigma=sigma_coeff)
-    x_min, x_max = round(min(ellipse[0])), round(max(ellipse[0]))
-    y_min, y_max = round(min(ellipse[1])), round(max(ellipse[1]))
-    # Keep slices in bounds; the notebook could wrap negative indices.
-    x_min, y_min = max(0, x_min), max(0, y_min)
-    x_max, y_max = min(spatial_sta.shape[0], x_max), min(spatial_sta.shape[1], y_max)
-    if x_max <= x_min or y_max <= y_min:
-        raise ValueError("the fitted ellipse produces an empty crop")
-    crop = (slice(x_min, x_max), slice(y_min, y_max))
-    cropped = np.asarray(spatial_sta)[crop]
+def ellipse_mask(shape, outline):
+    """Pixels of an array of ``shape`` whose centres lie inside a closed ``outline``.
 
-    # Fill pixels between the two ellipse intersections in every column.
-    ref = np.rint(ellipse.T - np.array([x_min, y_min])).astype(int)
-    mask = np.zeros(cropped.shape, dtype=bool)
-    for column in range(cropped.shape[1]):
-        rows = ref[ref[:, 1] == column, 0]
-        rows = rows[(rows >= 0) & (rows < cropped.shape[0])]
-        if rows.size:
-            mask[rows.min():rows.max() + 1, column] = True
-        elif 0 < column < cropped.shape[1] - 1:
-            mask[:, column] = mask[:, column - 1]
-    if not mask.any():
-        raise ValueError("the fitted ellipse contains no in-bounds pixels")
-    return np.where(mask, cropped, 0), crop, mask
+    ``outline`` is a ``(2, n)`` array of x and y coordinates in pixel-index
+    units, as returned by :func:`fitellipse`.
+    """
+    x, y = np.indices(shape)
+    polygon = shapely.Polygon(np.asarray(outline).T)
+    return shapely.contains_xy(polygon, x, y)
+
+
+def crop_sta(spatial_sta, sigma_coeff=1.5):
+    """Crop a spatial STA to a fitted Gaussian ellipse and return its mask.
+
+    The mask holds every pixel whose centre lies inside the ellipse drawn
+    ``sigma_coeff`` standard deviations from the fitted Gaussian's centre,
+    clipped to the frame. The crop is the mask's bounding box.
+
+    Returns:
+        (cropped STA with pixels outside the mask set to 0, crop slices,
+        boolean mask of the cropped window).
+
+    Raises:
+        ValueError: If no pixel centre lies inside the ellipse.
+    """
+    spatial_sta = np.asarray(spatial_sta)
+    full_mask = ellipse_mask(spatial_sta.shape, fitellipse(spatial_sta, sigma=sigma_coeff))
+    if not full_mask.any():
+        raise ValueError("the fitted ellipse contains no pixel centres in the frame")
+    rows, columns = np.flatnonzero(full_mask.any(axis=1)), np.flatnonzero(full_mask.any(axis=0))
+    crop = (slice(int(rows[0]), int(rows[-1]) + 1), slice(int(columns[0]), int(columns[-1]) + 1))
+    mask = full_mask[crop]
+    return np.where(mask, spatial_sta[crop], 0), crop, mask
 
 
 def _cropped_trial(stimuli, stim_path, trial, x, y, num_frames, crop, n_pixels):
