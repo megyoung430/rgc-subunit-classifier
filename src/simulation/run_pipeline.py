@@ -6,11 +6,11 @@ from pathlib import Path
 import h5py
 import numpy as np
 import torch
-from scipy import io as spio
 from sklearn.model_selection import train_test_split
 from torch.utils.data import WeightedRandomSampler
 
 from ..analysis.analyze_subunits import get_subunits
+from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_classifier import SpikeClassifier, SpikeDataset, run_model
 from ..outputs import write_new_file
 from .generate_training_data import crop_sta, gen_ses, gen_sta
@@ -32,6 +32,10 @@ class PipelineResult:
     accuracies: dict
     test_loss: float
     test_accuracy: float
+
+
+def _subfolder(cache_dir, name):
+    return None if cache_dir is None else Path(cache_dir) / name
 
 
 def _balanced_sampler(labels, generator):
@@ -77,19 +81,23 @@ def run_subunit_model(
     l2_coefficient=0,
     random_state=0,
     max_trials=None,
+    cache_dir=None,
     scheduler_step=None,
     scheduler_gamma=0.75,
     morans_threshold=0.25,
 ):
     """Run the reproducible training portion of the manuscript pipeline.
 
-    Frozen-stimulus LN/subunit evaluation is intentionally exposed separately
-    in :mod:`src.prediction`, because the repository does not include the
-    required ``stim_frz.h5`` or per-trial stimulus files.
+    Frozen-stimulus LN/subunit evaluation is exposed separately in
+    :mod:`src.prediction`. ``sta_path`` caches the STA; ``cache_dir`` caches
+    the spike counts (``spikes/``) and this cell's cropped stimulus
+    (``stimuli/``), so later runs of the same cell skip reading the trial files.
     """
     torch.manual_seed(random_state)
     rng = torch.Generator().manual_seed(random_state)
-    spike_data = spio.loadmat(data_path)["spk1"]
+    spike_data = load_spike_data(
+        data_path, _subfolder(cache_dir, "spikes"), keys=("spk1",)
+    )["spk1"]
     if not 0 <= cell_num < spike_data.shape[0]:
         raise IndexError(f"cell_num must be between 0 and {spike_data.shape[0] - 1}")
     spikecounts = spike_data[cell_num]
@@ -117,10 +125,14 @@ def run_subunit_model(
         num_frames, num_trials, sta_path=sta_path, stim_path=stim_path,
     )
     cropped_sta, crop, ellipse_mask = crop_sta(spatial_sta, sigma)
+    stimuli = cropped_stimulus(
+        stim_path, crop, stimulus_width, stimulus_height, num_frames, num_trials,
+        _subfolder(cache_dir, "stimuli"),
+    )
     examples, labels = gen_ses(
         stimulus_width, stimulus_height, spikecounts, temporal_sta, cropped_sta,
         crop, ellipse_mask, filter_length, num_frames, num_trials,
-        stim_path=stim_path,
+        stimuli=stimuli,
     )
 
     x_train, x_test, y_train, y_test = train_test_split(

@@ -7,8 +7,8 @@ import json
 from pathlib import Path
 
 import numpy as np
-from scipy.io import loadmat
 
+from ..data_cache import load_spike_data
 from ..outputs import check_new_output, check_output_dir, write_new_file
 from ..simulation.run_autoencoder_pipeline import run_autoencoder_model
 from ..simulation.run_pipeline import run_subunit_model
@@ -106,6 +106,7 @@ def run_sweep(
     output_dir,
     batch_size,
     stop_threshold=1e-5,
+    cache_dir=None,
     dry_run=False,
     continue_on_error=True,
 ):
@@ -113,11 +114,15 @@ def run_sweep(
 
     Completed run IDs in ``summary.csv`` are skipped, so interrupted sweeps can
     be resumed with the same command. Failed rows are retried on the next run.
+    ``cache_dir`` is passed to the pipelines; caching does not change results,
+    so it is not part of the run ID.
     """
     output_dir = check_output_dir(output_dir)
     artifact_dir = output_dir / "artifacts"
     summary_path = output_dir / "summary.csv"
-    total_trials = loadmat(data_path, variable_names=["spk1"])["spk1"].shape[2]
+    # A dry run writes nothing, not even the spike cache.
+    spikes_dir = None if cache_dir is None or dry_run else Path(cache_dir) / "spikes"
+    total_trials = load_spike_data(data_path, spikes_dir, keys=("spk1",))["spk1"].shape[2]
     completed = completed_run_ids(summary_path)
     planned = []
     for original in configs:
@@ -151,7 +156,7 @@ def run_sweep(
             l1_coefficient=float(config["l1_coefficient"]),
             l2_coefficient=float(config["l2_coefficient"]),
             sigma=float(config["sigma"]), random_state=int(config["seed"]),
-            max_trials=int(config["max_trials"]),
+            max_trials=int(config["max_trials"]), cache_dir=cache_dir,
         )
         row = {"run_id": identifier, **config, "artifact": str(artifact_path)}
         try:

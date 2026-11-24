@@ -126,6 +126,41 @@ def test_sta_cache_cannot_be_combined_with_generated_stimuli(tmp_path):
                 stimulus_generator=lambda seed, n: (np.ones(n), seed))
 
 
+def test_ensembles_from_preloaded_stimuli_match_file_loading(tmp_path):
+    x, y, frames, trials = 3, 2, 6, 2
+    rng = np.random.default_rng(2)
+    stims = [rng.choice([-1, 1], size=(x * y, frames)) for _ in range(trials)]
+    for trial, values in enumerate(stims):
+        save_stimulus(tmp_path, trial, values)
+    crop = (slice(0, 2), slice(0, 2))
+    mask = np.array([[True, True], [False, True]])
+    temporal = np.array([0.5, -1.0])
+    spikes = rng.integers(0, 2, size=(frames, trials))
+    preloaded = np.stack(
+        [s.reshape(x, y, frames)[crop].reshape(-1, frames) for s in stims]
+    )
+    args = (x, y, spikes, temporal, np.ones((2, 2)), crop, mask, 2, frames, trials)
+
+    from_files = gen_ses(*args, stim_path=tmp_path)
+    from_array = gen_ses(*args, stimuli=preloaded)
+    for a, b in zip(from_files, from_array):
+        np.testing.assert_array_equal(a, b)
+    np.testing.assert_array_equal(
+        gen_eses(*args, tmp_path), gen_eses(*args, None, stimuli=preloaded)
+    )
+
+
+def test_preloaded_stimuli_with_the_wrong_crop_are_rejected(tmp_path):
+    spikes = np.zeros((4, 1), dtype=int)
+    args = (2, 2, spikes, np.array([1.0]), np.ones((2, 2)),
+            (slice(0, 2), slice(0, 2)), np.ones((2, 2), dtype=bool), 1, 4, 1)
+    with pytest.raises(ValueError, match="pixels"):
+        gen_ses(*args, stimuli=np.zeros((1, 9, 4)))
+    with pytest.raises(ValueError, match="generate_stimuli"):
+        gen_ses(*args, stimuli=np.zeros((1, 4, 4)), generate_stimuli=True,
+                running_seed=0, stimulus_generator=lambda s, n: (np.ones(n), s))
+
+
 def test_sta_cache_written_by_another_run_meanwhile_is_not_an_error(tmp_path, monkeypatch):
     def already_written(path, write):
         raise FileExistsError(path)

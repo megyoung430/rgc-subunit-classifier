@@ -2,18 +2,21 @@
 
 import argparse
 import json
+from pathlib import Path
 
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.io import loadmat
 
 from src.analysis.model_comparison import prediction_metrics
+from src.data_cache import cropped_stimulus, load_spike_data
 from src.outputs import check_output_dir
 from src.prediction.sta_model_predictions import (
-    gen_sta_model, get_sta_predictions,
+    gen_sta_model,
+    get_sta_predictions,
 )
 from src.prediction.subunit_model_predictions import (
-    gen_subunit_model, get_subunit_predictions,
+    gen_subunit_model,
+    get_subunit_predictions,
 )
 from src.simulation.generate_training_data import crop_sta, gen_sta
 from src.simulation.run_pipeline import run_subunit_model
@@ -25,7 +28,8 @@ def build_parser():
     parser.add_argument("--cell", type=int, default=0)
     parser.add_argument("--data", default="data/cell_data_01_NC.mat")
     parser.add_argument("--stimuli", default="data/stimulus_data")
-    parser.add_argument("--sta", default="results/sta_cache")
+    parser.add_argument("--sta", default="results/cache/sta")
+    parser.add_argument("--cache", default="results/cache")
     parser.add_argument("--output", default="results/demo_classifier_model_comparison")
     parser.add_argument("--nodes", type=int, default=60)
     parser.add_argument("--epochs", type=int, default=100)
@@ -50,7 +54,7 @@ def main(argv=None):
     width, height, refresh_rate = 200, 150, 30
     filter_length = int(0.67 * refresh_rate)
 
-    spike_data = loadmat(args.data)["spk1"]
+    spike_data = load_spike_data(args.data, Path(args.cache) / "spikes", keys=("spk1",))["spk1"]
     spikecounts = spike_data[args.cell]
     num_frames, total_trials = spikecounts.shape
     num_trials = total_trials if args.max_trials is None else min(args.max_trials, total_trials)
@@ -65,16 +69,21 @@ def main(argv=None):
     stac = sta.reshape(width, height, filter_length)[crop].reshape(
         cropped_sta.size, filter_length
     )
+    stimuli = cropped_stimulus(
+        args.stimuli, crop, width, height, num_frames, num_trials,
+        Path(args.cache) / "stimuli",
+    )
 
     # 1. Fit the conventional linear-nonlinear baseline on running noise.
     print("1/4 Fitting the LN model...")
     ln_parameters = gen_sta_model(
         width, height, spikecounts, crop, *crop_shape, filter_length,
-        num_frames, num_trials, stac, args.stimuli,
+        num_frames, num_trials, stac, args.stimuli, stimuli=stimuli,
     )
     ln_predictions, ln_correlation, actual, time = get_sta_predictions(
         args.cell, ln_parameters, stac, crop, *crop_shape,
         args.data, args.stimuli, filter_length=filter_length,
+        cache_dir=args.cache,
     )
     ln_metrics = prediction_metrics(
         actual, ln_predictions, n_parameters=3 + stac.size,
@@ -89,7 +98,7 @@ def main(argv=None):
         learning_rate=args.learning_rate, num_epochs=args.epochs,
         l1_coefficient=args.l1, l2_coefficient=args.l2,
         sigma=args.sigma, random_state=args.seed, max_trials=args.max_trials,
-        morans_threshold=args.morans_threshold,
+        morans_threshold=args.morans_threshold, cache_dir=args.cache,
     )
     np.savez_compressed(
         output / "classifier_weights_and_subunits.npz",
@@ -117,12 +126,13 @@ def main(argv=None):
     subunit_parameters, combination_weights, normalized_subunits = gen_subunit_model(
         classifier.subunits, width, height, spikecounts, filter_length,
         num_frames, num_trials, spatial_sta, temporal_sta, crop,
-        *crop_shape, args.stimuli,
+        *crop_shape, args.stimuli, stimuli=stimuli,
     )
     subunit_predictions, subunit_correlation, _, _ = get_subunit_predictions(
         args.cell, subunit_parameters, combination_weights,
         normalized_subunits, temporal_sta, crop, *crop_shape,
         args.data, args.stimuli, filter_length=filter_length,
+        cache_dir=args.cache,
     )
     # Output nonlinearity (3) + one combination weight per selected subunit.
     subunit_metrics = prediction_metrics(

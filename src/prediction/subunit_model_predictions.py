@@ -1,19 +1,25 @@
 """Fit and evaluate a rectified subunit model."""
 
-from pathlib import Path
 
-import h5py
 import numpy as np
-from scipy import io as spio, optimize
+from scipy import optimize
 
-from .sta_model_predictions import _binned_response, _load_trial, nonlin
+from ..data_cache import check_stimuli
+from .sta_model_predictions import _binned_response, _frozen_inputs, _trial, nonlin
 
 
 def gen_subunit_model(
     subunits, x, y, spikecounts, filter_length, num_frames, num_trials,
     spatial_sta, temp_sta, crop, crop_x, crop_y, stim_path, dt=1 / 30,
+    stimuli=None,
 ):
-    """Fit spatial combination weights and the scalar output nonlinearity."""
+    """Fit spatial combination weights and the scalar output nonlinearity.
+
+    ``stimuli`` is an optional preloaded cropped stimulus of shape
+    ``(trials, crop pixels, num_frames)``; when given, no files are read.
+    """
+    if stimuli is not None:
+        check_stimuli(stimuli, crop_x * crop_y, num_frames, num_trials)
     subunits = np.asarray(subunits, dtype=float).reshape(len(subunits), -1).copy()
     norms = np.linalg.norm(subunits, axis=1)
     if np.any(norms == 0):
@@ -26,7 +32,7 @@ def gen_subunit_model(
 
     filtered = []
     for trial in range(num_trials):
-        stimulus = _load_trial(stim_path, trial, x, y, num_frames, crop)
+        stimulus = _trial(stimuli, stim_path, trial, x, y, num_frames, crop)
         for frame in range(filter_length, num_frames):
             frames = stimulus[:, frame-filter_length:frame] * np.asarray(temp_sta)
             activations = np.maximum(subunits.dot(frames.mean(axis=1)), 0)
@@ -43,16 +49,16 @@ def gen_subunit_model(
 def get_subunit_predictions(
     cell_num, params_subunits, weights, subunits, temp_sta, crop,
     crop_x, crop_y, data_path, stim_frz_path, dt=1 / 30, filter_length=20,
+    cache_dir=None,
 ):
-    """Predict the frozen-noise response and return its Pearson correlation."""
-    spikecounts = spio.loadmat(data_path)["spk2"][cell_num]
-    num_frames = spikecounts.shape[0]
-    with h5py.File(Path(stim_frz_path) / "stim_frz.h5", "r") as handle:
-        stimulus = handle["stim_frz"][:]
-    stimulus = stimulus[crop]
-    stimulus = np.moveaxis(stimulus, 0, 1).reshape(
-        crop_y * crop_x, num_frames, order="F"
+    """Predict the frozen-noise response and return its Pearson correlation.
+
+    ``cache_dir`` works as in :func:`get_sta_predictions`.
+    """
+    spikecounts, stimulus = _frozen_inputs(
+        cell_num, crop, data_path, stim_frz_path, cache_dir
     )
+    num_frames = spikecounts.shape[0]
     predictions = []
     for frame in range(filter_length, num_frames):
         frames = stimulus[:, frame-filter_length:frame] * np.asarray(temp_sta)

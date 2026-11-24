@@ -20,7 +20,8 @@ def parser():
     command.add_argument("--batch-size", type=int, default=100)
     command.add_argument("--data", default="data/cell_data_01_NC.mat")
     command.add_argument("--stimuli", default="data/stimulus_data")
-    command.add_argument("--sta", default="results/sta_cache")
+    command.add_argument("--sta", default="results/cache/sta")
+    command.add_argument("--cache", default="results/cache")
     command.add_argument("--output", default="results/sweeps/data_fractions")
     command.add_argument("--dry-run", action="store_true")
     command.add_argument("--fail-fast", action="store_true")
@@ -39,7 +40,7 @@ def main(argv=None):
     )
     rows = run_sweep(
         grid, data_path=args.data, stim_path=args.stimuli, sta_path=args.sta,
-        output_dir=args.output, batch_size=args.batch_size,
+        output_dir=args.output, batch_size=args.batch_size, cache_dir=args.cache,
         dry_run=args.dry_run, continue_on_error=not args.fail_fast,
     )
     print(f"{len(rows)} run(s) {'planned' if args.dry_run else 'processed'}")

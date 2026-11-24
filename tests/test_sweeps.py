@@ -66,6 +66,17 @@ def test_dry_run_reads_trial_count_without_training(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
+def test_dry_run_with_a_cache_folder_writes_nothing(tmp_path):
+    run_sweep(
+        one_config(), data_path=tiny_mat(tmp_path / "cells.mat"),
+        stim_path=tmp_path / "stim", sta_path=tmp_path / "cache" / "sta",
+        output_dir=tmp_path / "out", batch_size=2, cache_dir=tmp_path / "cache",
+        dry_run=True,
+    )
+    assert not (tmp_path / "cache").exists()
+    assert not (tmp_path / "out").exists()
+
+
 def test_existing_artifact_without_complete_row_fails_before_training(tmp_path, monkeypatch):
     import src.analysis.sweeps as sweeps
 

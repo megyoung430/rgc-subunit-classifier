@@ -9,6 +9,7 @@ import h5py
 import numpy as np
 
 from ..analysis.fitellipse import fitellipse
+from ..data_cache import check_stimuli
 from ..outputs import check_output_dir, write_new_file
 
 # Bump when the STA computation changes, so older cache files are not reused.
@@ -246,6 +247,14 @@ def crop_sta(spatial_sta, sigma_coeff=1.5):
     return np.where(mask, cropped, 0), crop, mask
 
 
+def _cropped_trial(stimuli, stim_path, trial, x, y, num_frames, crop, n_pixels):
+    """One trial's stimulus cropped to ``crop``, from ``stimuli`` if given, else from file."""
+    if stimuli is not None:
+        return np.asarray(stimuli[trial])
+    stimulus = _load_stimulus(stim_path, trial)
+    return stimulus.reshape(x, y, num_frames)[crop].reshape(n_pixels, num_frames)
+
+
 def gen_ses(
     x,
     y,
@@ -261,24 +270,36 @@ def gen_ses(
     generate_stimuli=False,
     running_seed=None,
     stimulus_generator=None,
+    stimuli=None,
 ):
-    """Create temporally filtered, ellipse-masked ensembles and binary labels."""
-    if not generate_stimuli and stim_path is None:
-        raise ValueError("stim_path is required when generate_stimuli=False")
+    """Create temporally filtered, ellipse-masked ensembles and binary labels.
+
+    ``stimuli`` is an optional preloaded cropped stimulus of shape
+    ``(trials, crop pixels, num_frames)`` (see
+    :func:`src.data_cache.cropped_stimulus`); when given, no files are read.
+    """
+    crop_x, crop_y = np.asarray(sta_cropped).shape
+    if stimuli is not None:
+        if generate_stimuli:
+            raise ValueError("pass either stimuli or generate_stimuli, not both")
+        check_stimuli(stimuli, crop_x * crop_y, num_frames, num_trials)
+    elif not generate_stimuli and stim_path is None:
+        raise ValueError("stim_path or stimuli is required when generate_stimuli=False")
     seed = running_seed
     examples, labels = [], []
     mask = np.asarray(ell_pixels, dtype=bool).ravel()
-    crop_x, crop_y = np.asarray(sta_cropped).shape
     for trial in range(num_trials):
         if generate_stimuli:
             stimulus, seed = _make_stimulus(
                 stimulus_generator, seed, x, y, num_frames
             )
+            stimulus = stimulus.reshape(x, y, num_frames)[crop].reshape(
+                crop_x * crop_y, num_frames
+            )
         else:
-            stimulus = _load_stimulus(stim_path, trial)
-        stimulus = stimulus.reshape(x, y, num_frames)[crop].reshape(
-            crop_x * crop_y, num_frames
-        )
+            stimulus = _cropped_trial(
+                stimuli, stim_path, trial, x, y, num_frames, crop, crop_x * crop_y
+            )
         for frame in range(filter_length, num_frames):
             frames = stimulus[:, frame-filter_length:frame]
             current = np.mean(frames * np.asarray(temp_sta), axis=1)
@@ -298,20 +319,25 @@ def gen_eses(
     filter_length,
     num_frames,
     num_trials,
-    stim_path,
+    stim_path=None,
+    stimuli=None,
 ):
     """Create ellipse-masked ensembles only at frames containing spikes.
 
     This matches the autoencoder notebook: a frame with one or more spikes
     contributes one example (spike multiplicity does not duplicate examples).
+    ``stimuli`` is an optional preloaded cropped stimulus, as in :func:`gen_ses`.
     """
+    crop_x, crop_y = np.asarray(sta_cropped).shape
+    if stimuli is not None:
+        check_stimuli(stimuli, crop_x * crop_y, num_frames, num_trials)
+    elif stim_path is None:
+        raise ValueError("stim_path or stimuli is required")
     examples = []
     mask = np.asarray(ell_pixels, dtype=bool).ravel()
-    crop_x, crop_y = np.asarray(sta_cropped).shape
     for trial in range(num_trials):
-        stimulus = _load_stimulus(stim_path, trial)
-        stimulus = stimulus.reshape(x, y, num_frames)[crop].reshape(
-            crop_x * crop_y, num_frames
+        stimulus = _cropped_trial(
+            stimuli, stim_path, trial, x, y, num_frames, crop, crop_x * crop_y
         )
         for frame in np.flatnonzero(spikecounts[:, trial]):
             if frame < filter_length:
