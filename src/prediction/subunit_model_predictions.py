@@ -2,10 +2,9 @@
 
 
 import numpy as np
-from scipy import optimize
 
 from ..data_cache import check_stimuli
-from .sta_model_predictions import _binned_response, _frozen_inputs, _trial, nonlin
+from .sta_model_predictions import _binned_response, _frozen_inputs, _trial, fit_softplus, nonlin
 
 
 def gen_subunit_model(
@@ -39,10 +38,7 @@ def gen_subunit_model(
             filtered.append(activations.dot(weights))
     counts = np.asarray(spikecounts)[filter_length:, :].T.ravel()
     centers, rates = _binned_response(np.asarray(filtered), counts, dt)
-    params = optimize.leastsq(
-        lambda p, x_values, y_values: y_values - nonlin(x_values, *p),
-        [1, 1, 1], args=(centers, rates),
-    )[0]
+    params = fit_softplus(centers, rates)
     return params, weights, subunits
 
 

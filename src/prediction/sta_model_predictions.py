@@ -9,6 +9,11 @@ from scipy import optimize
 from ..data_cache import check_stimuli, cropped_frozen_stimulus, load_spike_data
 
 
+# Steep threshold curves (a2 around 5) need far more evaluations than
+# leastsq's default of 800 to converge.
+MAX_FIT_EVALUATIONS = 20000
+
+
 def nonlin(x, a1, a2, a3):
     """Softplus output nonlinearity used by the original notebook."""
     return a1 * np.logaddexp(0, a2 * (np.asarray(x) + a3))
@@ -61,14 +66,50 @@ def separable_ln_filter(spatial_sta, temporal_sta, crop, mask):
     an independent, noisy weight for every pixel and lag, and predicts held-out
     responses worse for that reason alone.
 
+    ``gen_sta`` cuts both slices through the STA's largest absolute value, so
+    each carries that value's sign and their product is always positive
+    there. For an OFF cell the product is therefore the negative of the STA;
+    multiplying by the sign of the spatial STA at its peak restores it.
+
     Returns:
         Crop pixels (C order) × lags, the layout ``gen_sta_model`` expects.
     """
-    spatial = np.asarray(spatial_sta)[crop]
+    spatial_sta = np.asarray(spatial_sta)
+    polarity = np.sign(spatial_sta.flat[np.abs(spatial_sta).argmax()])
+    spatial = spatial_sta[crop]
     mask = np.asarray(mask, dtype=bool)
     if mask.shape != spatial.shape:
         raise ValueError(f"mask has shape {mask.shape}; the crop has shape {spatial.shape}")
-    return np.outer(np.where(mask, spatial, 0.0).ravel(), np.asarray(temporal_sta))
+    return polarity * np.outer(np.where(mask, spatial, 0.0).ravel(), np.asarray(temporal_sta))
+
+
+def fit_softplus(centers, rates):
+    """Least-squares fit of :func:`nonlin` to binned firing rates.
+
+    Raises:
+        RuntimeError: If the fit does not converge, rather than returning
+            parameters from wherever the optimizer stopped.
+    """
+    centers, rates = np.asarray(centers, dtype=float), np.asarray(rates, dtype=float)
+    if not (np.all(np.isfinite(centers)) and np.all(np.isfinite(rates))):
+        raise ValueError("binned drives and rates must be finite")
+    # A fixed starting point fails for drives or rates far from 1, and one
+    # on the data's scale can stall in a poor solution, so try both and keep
+    # the converged fit with the smallest error.
+    spread = centers.std() or 1.0
+    starts = ([1.0, 1.0, 1.0], [max(rates.max(), 1e-6), 1 / spread, -centers.mean()])
+    fits, messages = [], []
+    for start in starts:
+        parameters, _, info, message, status = optimize.leastsq(
+            lambda p, x_values, y_values: y_values - nonlin(x_values, *p),
+            start, args=(centers, rates), full_output=True, maxfev=MAX_FIT_EVALUATIONS,
+        )
+        if status in (1, 2, 3, 4) and np.all(np.isfinite(parameters)):
+            fits.append((float(np.sum(info["fvec"] ** 2)), parameters))
+        messages.append(message)
+    if not fits:
+        raise RuntimeError(f"the softplus fit did not converge: {'; '.join(messages)}")
+    return min(fits, key=lambda fit: fit[0])[1]
 
 
 def gen_sta_model(
@@ -92,10 +133,7 @@ def gen_sta_model(
     centers, rates = _binned_response(np.asarray(filtered), counts, dt)
     if len(centers) < 3:
         raise ValueError("not enough populated response bins to fit the STA model")
-    return optimize.leastsq(
-        lambda p, x_values, y_values: y_values - nonlin(x_values, *p),
-        [1, 1, 1], args=(centers, rates),
-    )[0]
+    return fit_softplus(centers, rates)
 
 
 def get_sta_predictions(

@@ -6,8 +6,6 @@ from src.prediction.sta_model_predictions import gen_sta_model
 from src.prediction.subunit_model_predictions import gen_subunit_model
 
 
-# Random spikes give leastsq nothing to converge to; only input equivalence is tested.
-@pytest.mark.filterwarnings("ignore:Number of calls to function")
 def test_prediction_fits_accept_preloaded_cropped_stimuli(tmp_path):
     x, y, frames, trials, filt = 4, 4, 60, 3, 3
     rng = np.random.default_rng(3)
@@ -20,7 +18,9 @@ def test_prediction_fits_accept_preloaded_cropped_stimuli(tmp_path):
         [s.reshape(x, y, frames)[crop].reshape(-1, frames) for s in stims]
     )
     stac = rng.normal(size=(4, filt))
-    spikes = rng.poisson(1.0, size=(frames, trials))
+    # Spikes follow the cropped stimulus one frame earlier, so the softplus fits converge.
+    drive = np.stack([np.roll(p.sum(axis=0), 1) for p in preloaded], axis=1)
+    spikes = rng.poisson(np.log1p(np.exp(drive)))
 
     on_disk = gen_sta_model(x, y, spikes, crop, 2, 2, filt, frames, trials, stac, tmp_path)
     in_memory = gen_sta_model(x, y, spikes, crop, 2, 2, filt, frames, trials, stac, None,
