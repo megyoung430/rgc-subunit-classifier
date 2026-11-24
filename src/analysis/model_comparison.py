@@ -1,4 +1,4 @@
-"""Metrics and repeated-run stability analyses recovered from legacy notebooks."""
+"""Frozen-noise prediction metrics and repeated-run layout stability."""
 
 from dataclasses import dataclass
 
@@ -11,22 +11,57 @@ from .fitellipse import fitellipse
 
 @dataclass(frozen=True)
 class PredictionMetrics:
+    """How well a model's predicted firing rate matches the measured one.
+
+    Attributes:
+        correlation: Pearson correlation of predicted and measured rates.
+        mse: Mean squared error (Hz²).
+        n_observations: Number of time bins compared.
+        normalized_correlation: ``correlation`` divided by the noise ceiling
+            (see :func:`correlation_ceiling`); NaN if no ceiling was given.
+    """
+
     correlation: float
     mse: float
-    aic: float
-    bic: float
     n_observations: int
-    n_parameters: int
+    normalized_correlation: float
 
 
-def prediction_metrics(actual, predicted, n_parameters, filter_length=None):
-    """Calculate held-out correlation, MSE, AIC, and BIC.
+@dataclass(frozen=True)
+class NoiseCeiling:
+    """The best correlation any model could reach with a noisy measured rate.
 
-    AIC/BIC use the Gaussian residual likelihood up to an additive constant:
-    ``n * log(MSE) + penalty``. This preserves the notebook convention while
-    correctly using the number of predicted time bins rather than trial count.
+    Attributes:
+        reliability: Spearman-Brown corrected split-half correlation of the
+            trial-averaged response (the fraction of its variance that is
+            repeatable signal rather than noise).
+        max_correlation: ``sqrt(reliability)``, the expected correlation of
+            the true underlying rate with the measured average.
+        n_frames: Number of time bins used.
     """
-    actual, predicted = np.asarray(actual), np.asarray(predicted)
+
+    reliability: float
+    max_correlation: float
+    n_frames: int
+
+
+def prediction_metrics(actual, predicted, filter_length=None, ceiling=None):
+    """Held-out correlation and mean squared error of a predicted firing rate.
+
+    These, not AIC/BIC, are the comparison between the LN and subunit models:
+    both are scored on frozen-noise frames they were not fitted to, and the
+    two models' parameter counts are not comparable (the subunit model's
+    spatial filters come from a network fitted to other data).
+
+    Args:
+        actual: Measured rate for every frame.
+        predicted: Prediction for frames ``filter_length`` onwards.
+        filter_length: Frames dropped from ``actual`` to align it; defaults to
+            the length difference.
+        ceiling: Optional noise ceiling (``NoiseCeiling.max_correlation``) for
+            ``normalized_correlation``.
+    """
+    actual, predicted = np.asarray(actual, dtype=float), np.asarray(predicted, dtype=float)
     if filter_length is None:
         filter_length = len(actual) - len(predicted)
     actual = actual[filter_length:]
@@ -34,16 +69,48 @@ def prediction_metrics(actual, predicted, n_parameters, filter_length=None):
         raise ValueError("aligned actual and predicted responses must have equal shape")
     if not len(predicted):
         raise ValueError("predicted response cannot be empty")
-    residual = predicted - actual
-    mse = float(np.mean(residual ** 2))
-    n = len(predicted)
-    if mse <= 0:
-        aic = bic = float("-inf")
-    else:
-        aic = n * np.log(mse) + 2 * n_parameters
-        bic = n * np.log(mse) + np.log(n) * n_parameters
     correlation = float(np.corrcoef(actual, predicted)[0, 1])
-    return PredictionMetrics(correlation, mse, float(aic), float(bic), n, n_parameters)
+    normalized = correlation / ceiling if ceiling else float("nan")
+    return PredictionMetrics(
+        correlation=correlation,
+        mse=float(np.mean((predicted - actual) ** 2)),
+        n_observations=len(predicted),
+        normalized_correlation=float(normalized),
+    )
+
+
+def correlation_ceiling(repeats, filter_length=0, n_splits=200, seed=0):
+    """Noise ceiling for correlation with the trial-averaged frozen-noise response.
+
+    The repeats are split at random into two halves ``n_splits`` times; the
+    mean correlation between the halves' averages, corrected to the full
+    number of repeats with the Spearman-Brown formula ``2r / (1 + r)``, is
+    the reliability of the average. Its square root is the correlation a
+    perfect model of the underlying rate would be expected to reach.
+
+    Args:
+        repeats: Spike counts, frames × repeats (one cell's ``spk2``).
+        filter_length: Leading frames to drop, matching the predictions.
+        n_splits: Random half splits averaged.
+        seed: Seed for the splits.
+
+    Raises:
+        ValueError: With fewer than 2 repeats.
+    """
+    repeats = np.asarray(repeats, dtype=float)[filter_length:]
+    n_repeats = repeats.shape[1]
+    if n_repeats < 2:
+        raise ValueError("a split-half noise ceiling needs at least 2 repeats")
+    rng = np.random.default_rng(seed)
+    correlations = []
+    for _ in range(n_splits):
+        order = rng.permutation(n_repeats)
+        half = n_repeats // 2
+        first, second = repeats[:, order[:half]].mean(axis=1), repeats[:, order[half:]].mean(axis=1)
+        correlations.append(np.corrcoef(first, second)[0, 1])
+    r = float(np.nanmean(correlations))
+    reliability = max(0.0, 2 * r / (1 + r)) if r > -1 else 0.0
+    return NoiseCeiling(reliability, float(np.sqrt(reliability)), len(repeats))
 
 
 def _polygons(layout, crop_shape, sigma):

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-from src.analysis.model_comparison import prediction_metrics
+from src.analysis.model_comparison import correlation_ceiling, prediction_metrics
 from src.data_cache import cropped_stimulus, load_spike_data
 from src.outputs import check_output_dir
 from src.prediction.sta_model_predictions import (
@@ -85,9 +85,10 @@ def main(argv=None):
         args.data, args.stimuli, filter_length=filter_length,
         cache_dir=args.cache,
     )
+    repeats = load_spike_data(args.data, Path(args.cache) / "spikes", keys=("spk2",))["spk2"]
+    ceiling = correlation_ceiling(repeats[args.cell], filter_length, seed=args.seed)
     ln_metrics = prediction_metrics(
-        actual, ln_predictions, n_parameters=3 + stac.size,
-        filter_length=filter_length,
+        actual, ln_predictions, filter_length, ceiling=ceiling.max_correlation
     )
 
     # 2. Train the classifier and reconstruct hidden weights spatially.
@@ -134,10 +135,8 @@ def main(argv=None):
         args.data, args.stimuli, filter_length=filter_length,
         cache_dir=args.cache,
     )
-    # Output nonlinearity (3) + one combination weight per selected subunit.
     subunit_metrics = prediction_metrics(
-        actual, subunit_predictions,
-        n_parameters=3 + len(combination_weights), filter_length=filter_length,
+        actual, subunit_predictions, filter_length, ceiling=ceiling.max_correlation
     )
 
     # 4. Compare both models on exactly the same frozen-noise response.
@@ -163,13 +162,17 @@ def main(argv=None):
             "test_balanced_accuracy": classifier.test_balanced_accuracy,
             "test_auc": classifier.test_auc,
         },
+        "noise_ceiling": {
+            "max_correlation": ceiling.max_correlation,
+            "reliability": ceiling.reliability,
+        },
         "ln_model": {
-            "correlation": ln_correlation, "mse": ln_metrics.mse,
-            "aic": ln_metrics.aic, "bic": ln_metrics.bic,
+            "correlation": ln_metrics.correlation, "mse": ln_metrics.mse,
+            "normalized_correlation": ln_metrics.normalized_correlation,
         },
         "subunit_model": {
-            "correlation": subunit_correlation, "mse": subunit_metrics.mse,
-            "aic": subunit_metrics.aic, "bic": subunit_metrics.bic,
+            "correlation": subunit_metrics.correlation, "mse": subunit_metrics.mse,
+            "normalized_correlation": subunit_metrics.normalized_correlation,
         },
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

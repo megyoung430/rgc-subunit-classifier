@@ -159,11 +159,16 @@ stimulus. The observed rate is the repeat-averaged `spk2 / dt`.
 
 - Pearson correlation measures time-course agreement up to affine scaling.
 - MSE measures calibrated squared error in Hz².
-- AIC/BIC use `n log(MSE)` plus their standard parameter penalties.
+- The noise ceiling (`correlation_ceiling`) is the correlation a perfect model
+  of the underlying rate would reach, given the trial-to-trial variability of
+  the repeats: the square root of the Spearman-Brown corrected split-half
+  reliability of the repeat average, averaged over random half splits. The
+  normalized correlation is each model's correlation divided by it.
 
-AIC/BIC require an explicit parameter-counting convention. In particular,
-decide whether STA coefficients and neural spatial filters are counted as fitted
-parameters. Correlation and MSE are less ambiguous direct comparisons here.
+AIC/BIC are not used. Both models are scored on held-out frames, where
+information criteria do not apply, and their parameter counts are not
+comparable: the LN filter is the full spatiotemporal STA, while the subunit
+model's spatial filters come from a network fitted to other data.
 
 ## Stability across repeated training
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 from matplotlib import pyplot as plt
 
-from src.analysis.model_comparison import prediction_metrics
+from src.analysis.model_comparison import correlation_ceiling, prediction_metrics
 from src.data_cache import cropped_stimulus, load_spike_data
 from src.outputs import check_output_dir
 from src.prediction.sta_model_predictions import gen_sta_model, get_sta_predictions
@@ -78,8 +78,10 @@ def main(argv=None):
         args.data, args.stimuli, filter_length=filter_length,
         cache_dir=args.cache,
     )
+    repeats = load_spike_data(args.data, Path(args.cache) / "spikes", keys=("spk2",))["spk2"]
+    ceiling = correlation_ceiling(repeats[args.cell], filter_length, seed=args.seed)
     ln_metrics = prediction_metrics(
-        actual, ln_predictions, 3 + stac.size, filter_length
+        actual, ln_predictions, filter_length, ceiling=ceiling.max_correlation
     )
 
     print("2/4 Training the subunit autoencoder...")
@@ -127,7 +129,7 @@ def main(argv=None):
         cache_dir=args.cache,
     )
     subunit_metrics = prediction_metrics(
-        actual, subunit_predictions, 3 + len(combination_weights), filter_length
+        actual, subunit_predictions, filter_length, ceiling=ceiling.max_correlation
     )
 
     print("4/4 Saving frozen-noise comparison...")
@@ -147,13 +149,17 @@ def main(argv=None):
             "test_loss": autoencoder.test_loss,
             "output_activation": args.output_activation,
         },
+        "noise_ceiling": {
+            "max_correlation": ceiling.max_correlation,
+            "reliability": ceiling.reliability,
+        },
         "ln_model": {
-            "correlation": ln_correlation, "mse": ln_metrics.mse,
-            "aic": ln_metrics.aic, "bic": ln_metrics.bic,
+            "correlation": ln_metrics.correlation, "mse": ln_metrics.mse,
+            "normalized_correlation": ln_metrics.normalized_correlation,
         },
         "subunit_model": {
-            "correlation": subunit_correlation, "mse": subunit_metrics.mse,
-            "aic": subunit_metrics.aic, "bic": subunit_metrics.bic,
+            "correlation": subunit_metrics.correlation, "mse": subunit_metrics.mse,
+            "normalized_correlation": subunit_metrics.normalized_correlation,
         },
     }
     (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")

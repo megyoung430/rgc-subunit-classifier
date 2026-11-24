@@ -60,7 +60,7 @@ spk1 + running white noise
                          rectified subunit model        │
                                    │                    │
 spk2 + repeated frozen noise ◄─────┴────────────────────┘
-                         correlation / MSE / AIC / BIC
+                correlation / MSE vs. the repeats' noise ceiling
 ```
 
 The two neural methods expose the same downstream representation:
@@ -278,9 +278,10 @@ Tutorial output directories contain:
 | `selected_subunits.png` | Moran-selected spatial filters |
 | `frozen_noise_predictions.png` | Actual, LN, and subunit-model time series |
 
-Correlation and MSE compare models on identical frozen-noise bins. AIC/BIC are
-reported, but conclusions depend on the stated convention for counting learned
-spatial filters as fitted parameters. Classifier accuracy and autoencoder
+Correlation and MSE compare models on identical held-out frozen-noise bins; the
+normalized correlation divides by the repeats' noise ceiling (the best
+correlation any model could reach). AIC/BIC are not reported: the models are
+scored on held-out data and their parameter counts are not comparable. Classifier accuracy and autoencoder
 reconstruction loss are different objectives and must not be compared directly.
 
 For repeated runs, use `select_stable_layout` in
