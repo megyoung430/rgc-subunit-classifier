@@ -141,8 +141,11 @@ structure as the subunit model (spatial maps inside the ellipse, one shared
 temporal filter), so the LN-versus-subunit comparison isolates the subunit
 nonlinearity. The demos also report the full cropped spatiotemporal STA as
 `ln_model_full_sta` for reference; it has an independent, noisy weight for every
-pixel and lag and predicts held-out responses worse for that reason alone (cell
-0, 20 trials: r = 0.16 against 0.36 for the separable filter).
+pixel and lag and predicts held-out responses worse for that reason alone. On
+cell 0 with all 219 trials, the full-STA LN reaches r = 0.40 (the Colab
+notebook's LN reached 0.41), the separable LN 0.59 and the classifier subunit
+model 0.61. Most of the gap between the Colab LN and subunit results therefore
+comes from the noisier full-STA filter, not from the subunits.
 
 The LN filter linearly filters each running-noise history. The filtered values are divided into quantile bins and paired with mean firing rate.
 A three-parameter softplus is fit:
