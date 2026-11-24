@@ -54,14 +54,17 @@ Classifier result fields:
 | `subunits` | Moran-selected weights |
 | `sta`, `spatial_sta`, `temporal_sta` | STA components |
 | `crop`, `ellipse_mask` | Spatial reference |
-| `losses`, `accuracies` | Per-epoch train/validation curves |
-| `test_loss`, `test_accuracy` | Held-out loss (no L1 term) and plain accuracy |
+| `losses`, `accuracies` | Per-epoch train/validation curves (validation loss is class-balanced) |
+| `validation_loss` | Lowest class-balanced validation loss (the restored weights) |
+| `test_loss`, `test_accuracy` | Held-out loss at the natural spike rate (no L1 term) and plain accuracy |
+| `test_balanced_loss` | Held-out class-balanced loss, comparable with `validation_loss` (0.693 = chance) |
 | `test_balanced_accuracy`, `test_auc` | Class-balanced held-out metrics (0.5 = chance) |
 | `split_trials` | Trials in the train, valid and test sets |
+| `morans_i` | Moran's I of every node, inside the ellipse mask |
 
 Autoencoder result fields are analogous, with `validation_loss` (restored
-state), `test_loss` (held-out trials) and `n_examples` replacing the
-classifier's accuracy metrics.
+state), `test_loss` (held-out trials), `input_scale` and `n_examples` replacing
+the classifier's accuracy metrics.
 
 ## Hyperparameter sweeps
 
@@ -72,12 +75,15 @@ python scripts/run_hyperparameter_sweep.py \
   --models classifier --cells 0 --seeds 0,1,2 \
   --nodes 7,10,20,40,60 \
   --l1 0,0.0001,0.0005 \
-  --learning-rates 0.1,0.5 \
+  --classifier-learning-rates 0.1,0.5 \
   --epochs 100 --dry-run
 ```
 
-Remove `--dry-run` to execute. Classifier and autoencoder learning-rate scales
-differ, so separate commands are safer than a shared grid.
+Remove `--dry-run` to execute. The classifier (SGD) and autoencoder (Adam) need
+very different learning rates, so each has its own options:
+`--classifier-learning-rates` / `--classifier-batch-size` (defaults 0.5 and 25)
+and `--autoencoder-learning-rates` / `--autoencoder-batch-size` (defaults 0.001
+and 100). `--patience N` turns on early stopping; by default every epoch runs.
 
 ## Data-fraction sweeps
 
@@ -85,7 +91,7 @@ differ, so separate commands are safer than a shared grid.
 python scripts/run_data_fraction_sweep.py \
   --models classifier --cells 0 --seeds 0,1,2 \
   --fractions 0.1,0.25,0.5,0.75,1 \
-  --nodes 60 --learning-rates 0.5 --epochs 100
+  --nodes 60 --epochs 100
 ```
 
 Fractions are rounded to a deterministic trial-prefix size. For 219 trials:
@@ -108,13 +114,22 @@ results/sweeps/<name>/
     └── ...
 ```
 
-The stable run ID hashes model settings, batch size, stopping threshold, and
-resolved data paths. A repeated command skips rows marked `complete`. Failed rows
-remain retryable. `--fail-fast` stops at the first error; otherwise the sweep
-records it and continues.
+The run ID hashes the run's settings (including learning rate, batch size and
+patience), the code version (a hash of every Python file under `src/`), the
+content of the spike file, and the stimulus files' names and sizes. It does not
+depend on where the data are stored or when they were copied. A repeated command skips rows
+marked `complete`; failed rows are retried; a re-run after a code change trains
+again. `--fail-fast` stops at the first error; otherwise the sweep records it,
+continues, and exits with status 1. A `summary.csv` from an older format is
+refused: use a new output folder.
 
-Artifacts contain spatial weights, selected subunits, ellipse mask, losses, and
-available accuracies. The CSV is the experiment index; do not rename artifacts
+Summary columns are the same for both models: `validation_loss` (restored
+state; class-balanced cross-entropy for the classifier), `test_loss` (held-out trials; cross-entropy for the classifier,
+reconstruction error for the autoencoder), and for the classifier
+`test_balanced_loss` (comparable with its `validation_loss`),
+`test_balanced_accuracy` and `test_auc`. Artifacts contain spatial weights,
+selected subunits, each node's Moran's I, the ellipse mask, losses, available
+accuracies and the trials in each split. The CSV is the experiment index; do not rename artifacts
 without updating it.
 
 ## Comparing repeated layouts
