@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch.utils.data import WeightedRandomSampler
 
-from ..analysis.analyze_subunits import get_subunits
+from ..analysis.analyze_subunits import morans_i_values
 from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_classifier import (
     SpikeClassifier,
@@ -40,6 +40,7 @@ class PipelineResult:
     test_balanced_accuracy: float
     test_auc: float
     split_trials: dict
+    morans_i: np.ndarray
 
 
 def _subfolder(cache_dir, name):
@@ -182,10 +183,8 @@ def run_subunit_model(
     compact_weights = model.layer1.weight.detach().cpu().numpy()
     node_weights = np.zeros((node_num, cropped_sta.size))
     node_weights[:, ellipse_mask.ravel()] = compact_weights
-    subunits = get_subunits(
-        node_weights, *cropped_sta.shape,
-        threshold_morans_i=morans_threshold,
-    )
+    morans_values = morans_i_values(node_weights, cropped_sta.shape, ellipse_mask)
+    subunits = node_weights[np.nan_to_num(morans_values, nan=-np.inf) > morans_threshold]
     if subunits_save_path is not None:
         suffix = "" if version == 0 else f" ({version})"
         filename = (
@@ -199,6 +198,7 @@ def run_subunit_model(
         metrics.balanced_accuracy, metrics.auc,
         {name: np.unique(trial_ids[index]) for name, index in
          (("train", train_index), ("valid", valid_index), ("test", test_index))},
+        morans_values,
     )
 
 

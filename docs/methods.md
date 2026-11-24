@@ -117,13 +117,19 @@ cannot reconstruct their negative half; it remains available as
 
 First-layer classifier weights and autoencoder encoder weights are expanded into
 the same cropped spatial grid. Moran's I is calculated with four-neighbor
-adjacency. A node is selected when:
+adjacency over the pixels inside the ellipse mask only: the mean is taken over
+those pixels and only neighbour pairs with both pixels inside count. The weights
+are zero outside the mask by construction, so including those pixels would make
+any weight map with a consistent sign look smooth. Nodes with no weight variation
+inside the mask (Moran's I undefined) are never selected. Each node's value is
+returned as `morans_i`. A node is selected when:
 
 ```text
 Moran's I > threshold_morans_i
 ```
 
-The historical default is 0.25. This is a selection heuristic, not proof that a
+The historical default is 0.25; it was chosen when Moran's I included the
+zero padding, so it may deserve re-checking. This is a selection heuristic, not proof that a
 filter is a biological subunit. Report the threshold and inspect sensitivity to
 it. Do not use the permissive smoke-run threshold (`-1`) for scientific results.
 

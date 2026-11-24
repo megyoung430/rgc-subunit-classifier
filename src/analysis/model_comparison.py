@@ -75,16 +75,21 @@ def layout_similarity(first, second, crop_shape, sigma=1.5):
 def select_stable_layout(layouts, crop_shape, sigma=1.5):
     """Select the most representative layout among runs with the modal size.
 
-    This formalizes the notebook's repeated-training analysis: retain layouts
-    with the modal number of subunits, score all pairs by optimal ellipse
-    matching, and select the run with the greatest mean similarity.
+    Keeps the layouts with the most common number of subunits (the larger
+    count on a tie), scores every pair by optimally matched ellipse Jaccard
+    similarity (:func:`layout_similarity`), and returns the run with the
+    greatest mean similarity to the others. The Colab notebook used the same
+    idea but resolved ties toward the smaller count (``scipy.stats.mode``)
+    and matched subunits greedily, so it can pick a different run.
+
+    Returns:
+        (index of the selected layout, mean similarity of each eligible
+        layout, indices of the eligible layouts).
     """
     if not layouts:
         raise ValueError("at least one layout is required")
     counts = np.asarray([len(layout) for layout in layouts])
     values, frequencies = np.unique(counts, return_counts=True)
-    # Preserve the manuscript rule: if multiple counts are equally frequent,
-    # prefer the larger number of subunits.
     modal_count = int(values[frequencies == frequencies.max()].max())
     indices = np.flatnonzero(counts == modal_count)
     if len(indices) == 1:
