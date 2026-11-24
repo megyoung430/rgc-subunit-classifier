@@ -1,0 +1,2 @@
+Outputs of the original Colab analysis, kept unchanged as a record.
+src/outputs.py refuses any write inside a folder holding this file.

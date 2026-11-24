@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 
 from ..analysis.fitellipse import fitellipse
-from ..outputs import check_new_output, check_output_dir
+from ..outputs import check_output_dir, write_new_file
 
 # Bump when the STA computation changes, so older cache files are not reused.
 STA_CACHE_VERSION = 1
@@ -37,13 +37,37 @@ def _make_stimulus(generator, seed, x, y, num_frames):
     return stimulus, next_seed
 
 
-def sta_cache_key(spikecounts, x, y, filter_length):
-    """Short hash of everything the STA depends on apart from the stimulus files."""
+def stimulus_fingerprint(stim_path, num_trials):
+    """Folder and (name, size, modification time) of the first ``num_trials`` stimulus files.
+
+    Cheap to compute (no file contents are read) and different for another
+    stimulus folder or a replaced file, so caches built from one stimulus are
+    never served for another.
+
+    Raises:
+        FileNotFoundError: If a stimulus file is missing.
+    """
+    folder = Path(stim_path).resolve()
+    files = []
+    for trial in range(num_trials):
+        path = _stimulus_file(folder, trial)
+        if not path.exists():
+            raise FileNotFoundError(f"stimulus file {path} is missing")
+        stat = path.stat()
+        files.append([path.name, stat.st_size, stat.st_mtime_ns])
+    return {"folder": str(folder), "files": files}
+
+
+def sta_cache_key(spikecounts, x, y, filter_length, stimulus):
+    """Short hash of everything the STA depends on.
+
+    ``stimulus`` is the :func:`stimulus_fingerprint` of the stimulus files used.
+    """
     spikecounts = np.ascontiguousarray(spikecounts)
     settings = {
         "version": STA_CACHE_VERSION, "shape": spikecounts.shape,
         "dtype": str(spikecounts.dtype), "x": x, "y": y,
-        "filter_length": filter_length,
+        "filter_length": filter_length, "stimulus": stimulus,
     }
     digest = hashlib.sha256(json.dumps(settings, sort_keys=True).encode())
     digest.update(spikecounts.tobytes())
@@ -56,24 +80,33 @@ def sta_cache_file(sta_path, cell_num, key):
 
 
 def _load_sta_cache(path):
-    with h5py.File(path, "r") as handle:
-        return handle["STA"][:], handle["spatial_STA"][:], handle["temp_STA"][:]
+    try:
+        with h5py.File(path, "r") as handle:
+            return handle["STA"][:], handle["spatial_STA"][:], handle["temp_STA"][:]
+    except (OSError, KeyError) as error:
+        raise OSError(
+            f"STA cache file {path} is unreadable ({error}); delete it to recompute"
+        ) from error
+
+
+def _write_h5(path, datasets):
+    def write(temporary):
+        with h5py.File(temporary, "w") as handle:
+            for key, value in datasets.items():
+                handle.create_dataset(key, data=value, compression=3)
+
+    write_new_file(path, write)
 
 
 def _save_sta_cache(path, sta, spatial_sta, temp_sta):
-    check_new_output(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with h5py.File(path, "x") as handle:
-        for key, value in (("STA", sta), ("spatial_STA", spatial_sta),
-                           ("temp_STA", temp_sta)):
-            handle.create_dataset(key, data=value, compression=3)
+    try:
+        _write_h5(path, {"STA": sta, "spatial_STA": spatial_sta, "temp_STA": temp_sta})
+    except FileExistsError:
+        pass  # another run cached the same inputs meanwhile; the values are identical
 
 
 def _save_stimulus(path, trial, stimulus):
-    destination = check_new_output(_stimulus_file(path, trial))
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with h5py.File(destination, "x") as handle:
-        handle.create_dataset("stim", data=stimulus, compression=3)
+    _write_h5(_stimulus_file(path, trial), {"stim": stimulus})
 
 
 def _spike_triggered_sums(
@@ -131,9 +164,10 @@ def gen_sta(
     each normalized to unit Euclidean norm.
 
     If ``sta_path`` is given it is a cache folder: the result is stored under a
-    hash of the spike counts, stimulus size and filter length, and reused only
-    when all of these match, so a subset of trials never reuses a full-data STA.
-    The stimulus files themselves are assumed fixed and are not part of the key.
+    hash of the spike counts, stimulus size, filter length and the stimulus
+    files' folder, names, sizes and modification times, and reused only when
+    all of these match. A subset of trials or another stimulus folder therefore
+    never reuses a cached STA.
     """
     spikecounts = np.asarray(spikecounts)
     expected = (num_frames, num_trials)
@@ -141,9 +175,19 @@ def gen_sta(
         raise ValueError(f"spikecounts has shape {spikecounts.shape}; expected {expected}")
     cache = None
     if sta_path is not None:
+        if generate_stimuli:
+            raise ValueError(
+                "sta_path caches STAs of stored stimulus files; it cannot be "
+                "combined with generate_stimuli"
+            )
+        if stim_path is None:
+            raise ValueError("stim_path is required when generate_stimuli=False")
         cache = sta_cache_file(
             check_output_dir(sta_path), cell_num,
-            sta_cache_key(spikecounts, x, y, filter_length),
+            sta_cache_key(
+                spikecounts, x, y, filter_length,
+                stimulus_fingerprint(stim_path, num_trials),
+            ),
         )
         if cache.exists():
             return _load_sta_cache(cache)

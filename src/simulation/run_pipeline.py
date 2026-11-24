@@ -12,7 +12,7 @@ from torch.utils.data import WeightedRandomSampler
 
 from ..analysis.analyze_subunits import get_subunits
 from ..models.subunit_classifier import SpikeClassifier, SpikeDataset, run_model
-from ..outputs import check_new_output
+from ..outputs import write_new_file
 from .generate_training_data import crop_sta, gen_ses, gen_sta
 
 
@@ -47,11 +47,12 @@ def _balanced_sampler(labels, generator):
 
 def save_subunits(path, subunits):
     """Write subunits to a new HDF5 file; never overwrites an existing file."""
-    path = check_new_output(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with h5py.File(path, "x") as handle:
-        handle.create_dataset("subunits", data=subunits, compression=3)
-    return path
+
+    def write(temporary):
+        with h5py.File(temporary, "w") as handle:
+            handle.create_dataset("subunits", data=subunits, compression=3)
+
+    return write_new_file(path, write)
 
 
 def run_subunit_model(

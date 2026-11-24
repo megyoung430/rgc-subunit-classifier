@@ -1,9 +1,10 @@
 from pathlib import Path
 
 import h5py
-import pytest
 import numpy as np
+import pytest
 
+import src.simulation.generate_training_data as training_data
 from src.simulation.generate_training_data import gen_eses, gen_ses, gen_sta
 
 
@@ -53,7 +54,7 @@ def test_gen_eses_keeps_only_spike_frames_once(tmp_path):
     np.testing.assert_allclose(examples[0], [-0.5])
 
 
-def test_sta_cache_is_reused_only_for_identical_spikes(tmp_path):
+def test_sta_cache_is_reused_only_for_identical_spikes(tmp_path, monkeypatch):
     stim_dir, cache = tmp_path / "stim", tmp_path / "cache"
     stim_dir.mkdir()
     rng = np.random.default_rng(0)
@@ -63,14 +64,18 @@ def test_sta_cache_is_reused_only_for_identical_spikes(tmp_path):
 
     first = gen_sta(2, 1, spikes, 0, 2, 6, 2, stim_path=stim_dir, sta_path=cache)
     assert len(list(cache.glob("*.h5"))) == 1
-    # A cache hit must not need the stimulus files at all.
-    for path in stim_dir.iterdir():
-        path.unlink()
+    # A cache hit only checks the stimulus files' sizes and times; it reads none.
+    def no_reading(*args):
+        raise AssertionError("stimulus file read on a cache hit")
+
+    monkeypatch.setattr(training_data, "_load_stimulus", no_reading)
     again = gen_sta(2, 1, spikes, 0, 2, 6, 2, stim_path=stim_dir, sta_path=cache)
+    monkeypatch.undo()
     for a, b in zip(first, again):
         np.testing.assert_array_equal(a, b)
 
     # Fewer trials means different spikes, so the cached STA must not be used.
+    (stim_dir / "stim0000.h5").unlink()
     save_stimulus(stim_dir, 0, np.ones((2, 6)))
     subset = gen_sta(2, 1, spikes[:, :1], 0, 2, 6, 1, stim_path=stim_dir, sta_path=cache)
     assert len(list(cache.glob("*.h5"))) == 2
@@ -86,3 +91,36 @@ def test_sta_cache_cannot_be_written_into_the_archive(tmp_path, monkeypatch):
     with pytest.raises(PermissionError):
         gen_sta(2, 1, np.array([[0], [0], [1]]), 0, 2, 3, 1,
                 stim_path=tmp_path, sta_path=archive / "sta")
+
+
+def test_sta_cache_distinguishes_stimulus_folders(tmp_path):
+    cache = tmp_path / "cache"
+    real, flipped = tmp_path / "real", tmp_path / "flipped"
+    real.mkdir()
+    flipped.mkdir()
+    stimulus = np.array([[1, -1, 1, -1], [-1, 1, -1, 1]])
+    save_stimulus(real, 0, stimulus)
+    save_stimulus(flipped, 0, -stimulus)
+    spikes = np.array([[0], [0], [1], [0]])
+    a = gen_sta(2, 1, spikes, 0, 2, 4, 1, stim_path=real, sta_path=cache)[0]
+    b = gen_sta(2, 1, spikes, 0, 2, 4, 1, stim_path=flipped, sta_path=cache)[0]
+    np.testing.assert_array_equal(b, -a)
+    assert len(list(cache.glob("*.h5"))) == 2
+
+
+def test_corrupt_sta_cache_file_is_named_in_the_error(tmp_path):
+    save_stimulus(tmp_path, 0, np.array([[1, -1, 1], [-1, 1, -1]]))
+    spikes = np.array([[0], [0], [1]])
+    cache = tmp_path / "cache"
+    gen_sta(2, 1, spikes, 0, 2, 3, 1, stim_path=tmp_path, sta_path=cache)
+    (path,) = cache.glob("*.h5")
+    path.write_bytes(path.read_bytes()[:100])
+    with pytest.raises(OSError, match="delete it"):
+        gen_sta(2, 1, spikes, 0, 2, 3, 1, stim_path=tmp_path, sta_path=cache)
+
+
+def test_sta_cache_cannot_be_combined_with_generated_stimuli(tmp_path):
+    with pytest.raises(ValueError, match="sta_path"):
+        gen_sta(2, 1, np.zeros((3, 1)), 0, 2, 3, 1, sta_path=tmp_path,
+                generate_stimuli=True, running_seed=0,
+                stimulus_generator=lambda seed, n: (np.ones(n), seed))

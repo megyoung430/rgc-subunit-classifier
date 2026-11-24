@@ -56,17 +56,22 @@ The actual frozen response is the mean `spk2` count across repeats, divided by
 Passing `sta_path="results/sta_cache"` (the scripts' default) caches each cell's
 STA in one file, `Cell N STA <key>.h5`, with keys `STA` (shape `(30000, 20)`),
 `spatial_STA` (`(200, 150)`) and `temp_STA` (`(20,)`). `<key>` is a hash of the
-spike counts used, the stimulus size and the filter length, so a run on a subset
-of trials (`max_trials` below 219) computes and caches its own STA instead of
-reusing the full-data one. The stimulus files are assumed fixed and are not part
-of the key. Cache files are never overwritten; delete `results/sta_cache/` to
-force a recompute. Omitting `sta_path` recomputes the STA without caching.
+spike counts used, the stimulus size, the filter length, and the stimulus folder
+with each trial file's name, size and modification time. A run on a subset of
+trials (`max_trials` below 219) or on another stimulus folder therefore computes
+and caches its own STA. A cache hit checks the stimulus files' sizes and times
+but reads none of them. Cache files are written whole or not at all and never
+overwritten; delete `results/sta_cache/` to force a recompute. Omitting
+`sta_path` recomputes the STA without caching.
 
 `results/colab_legacy/` holds the outputs of the original Colab analysis
 (STAs in `sta/`, subunits, and classifier, STNMF and LN performance tables),
-unchanged. The code never reads from it, and every writer in `src/` raises
-`PermissionError` if pointed inside it. Everything else under `results/` is
-git-ignored.
+unchanged. The code does not read it: its STAs are in the old three-file format,
+so new runs recompute STAs rather than reuse them, and results can differ from
+runs that loaded those saved STAs. Every writer in `src/` raises
+`PermissionError` inside any folder holding the committed marker file
+`.read-only-archive`, so the guard holds in other clones and worktrees too.
+Everything else under `results/` is git-ignored.
 
 ## Filter and alignment
 
