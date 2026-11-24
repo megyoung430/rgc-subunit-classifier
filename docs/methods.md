@@ -135,8 +135,19 @@ it. Do not use the permissive smoke-run threshold (`-1`) for scientific results.
 
 ## LN model
 
-The cropped spatiotemporal STA linearly filters each running-noise history. The
-filtered values are divided into quantile bins and paired with mean firing rate.
+The LN filter is separable: the cropped spatial STA, set to zero outside the
+ellipse mask, times the temporal STA (`separable_ln_filter`). This is the same
+structure as the subunit model (spatial maps inside the ellipse, one shared
+temporal filter), so the LN-versus-subunit comparison isolates the subunit
+nonlinearity. The demos also report the full cropped spatiotemporal STA as
+`ln_model_full_sta` for reference; it has an independent, noisy weight for every
+pixel and lag and predicts held-out responses worse for that reason alone. On
+cell 0 with all 219 trials, the full-STA LN reaches r = 0.40 (the Colab
+notebook's LN reached 0.41), the separable LN 0.59 and the classifier subunit
+model 0.61. Most of the gap between the Colab LN and subunit results therefore
+comes from the noisier full-STA filter, not from the subunits.
+
+The LN filter linearly filters each running-noise history. The filtered values are divided into quantile bins and paired with mean firing rate.
 A three-parameter softplus is fit:
 
 ```text
@@ -159,11 +170,16 @@ stimulus. The observed rate is the repeat-averaged `spk2 / dt`.
 
 - Pearson correlation measures time-course agreement up to affine scaling.
 - MSE measures calibrated squared error in Hz².
-- AIC/BIC use `n log(MSE)` plus their standard parameter penalties.
+- The noise ceiling (`correlation_ceiling`) is the correlation a perfect model
+  of the underlying rate would reach, given the trial-to-trial variability of
+  the repeats: the square root of the Spearman-Brown corrected split-half
+  reliability of the repeat average, averaged over random half splits. The
+  normalized correlation is each model's correlation divided by it.
 
-AIC/BIC require an explicit parameter-counting convention. In particular,
-decide whether STA coefficients and neural spatial filters are counted as fitted
-parameters. Correlation and MSE are less ambiguous direct comparisons here.
+AIC/BIC are not used. Both models are scored on held-out frames, where
+information criteria do not apply, and their parameter counts are not
+comparable: the LN filter comes from the STA, while the subunit model's
+spatial filters come from a network fitted to other data.
 
 ## Stability across repeated training
 

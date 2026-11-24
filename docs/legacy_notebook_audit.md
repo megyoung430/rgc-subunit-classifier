@@ -11,7 +11,7 @@ differs. There are 62 notebook copies representing 29 distinct notebook files.
 | Classifier and autoencoder parameter variants | `src/models/` and `src/simulation/` | Common reproducible pipelines replace Colab globals and duplicated cells. |
 | Step learning-rate schedules | `run_model(..., scheduler_step=..., scheduler_gamma=...)` | Present in later classifier notebooks. |
 | Repeated-run layout stability | `src.analysis.model_comparison.select_stable_layout` | Uses modal subunit count, optimal one-to-one ellipse matching, and mean Jaccard similarity. |
-| MSE, AIC, BIC, and correlation | `src.analysis.model_comparison.prediction_metrics` | Corrects the notebook AIC/BIC sample size from trial count to predicted time-bin count. |
+| MSE and correlation (notebook AIC/BIC dropped) | `src.analysis.model_comparison.prediction_metrics`, `correlation_ceiling` | Adds a split-half noise ceiling; AIC/BIC are not meaningful on held-out data with incomparable parameter counts. |
 | STNMF comparison | `src.models.stnmf_baseline` | Provides data-shape and execution adapters without copying the bundled third-party source. |
 | Subunit and prediction figures | `src.visualization.plotting_fxns` | Returns Matplotlib objects and never changes directories or triggers downloads. |
 | Autoencoder neighbour-aware regularization | `src.models.subunit_autoencoder` | Reimplemented with PyTorch operations so gradients propagate. |
@@ -52,7 +52,8 @@ differs. There are 62 notebook copies representing 29 distinct notebook files.
   Its NNSVD-LRC initialization remains a possible future controlled model variant.
 - Copied `STNMF Dependency` and `h5deref Dependency` sources are third-party code.
   They are not vendored into the package; the STNMF adapter uses an installed
-  maintained package when requested.
+  maintained package when requested. The one exception is `src/analysis/fitellipse.py`,
+  adapted from `stnmf.space.fitellipse` under its MIT licence (notice in the file).
 - `regularizer.py` duplicates standard L1, L2, elastic-net, and group-lasso
   formulas. Current models already implement L1/L2 and the autoencoder spatial
   penalty. The untested legacy classes are not copied wholesale.
