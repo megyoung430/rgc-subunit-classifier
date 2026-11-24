@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ..analysis.analyze_subunits import get_subunits
+from ..analysis.analyze_subunits import morans_i_values, select_by_morans_i
 from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_autoencoder import (
     EnsembleDataset,
@@ -49,6 +49,7 @@ class AutoencoderResult:
     input_scale: float
     n_examples: int
     split_trials: dict
+    morans_i: np.ndarray
 
 
 def run_autoencoder_model(
@@ -152,14 +153,13 @@ def run_autoencoder_model(
     compact = model.subunit_weights.detach().cpu().numpy()
     node_weights = np.zeros((node_num, cropped_sta.size))
     node_weights[:, ellipse_mask.ravel()] = compact
-    subunits = get_subunits(
-        node_weights, *cropped_sta.shape,
-        threshold_morans_i=morans_threshold,
-    )
+    morans_values = morans_i_values(node_weights, cropped_sta.shape, ellipse_mask)
+    subunits = select_by_morans_i(node_weights, morans_values, morans_threshold)
     return AutoencoderResult(
         model, subunits, node_weights, sta, spatial_sta, temporal_sta, crop,
         ellipse_mask, losses, min(losses["valid"]), evaluate_autoencoder(model, test),
         input_scale, len(ensembles),
         {name: np.unique(trial_ids[index]) for name, index in
          (("train", train_index), ("valid", valid_index), ("test", test_index))},
+        morans_values,
     )

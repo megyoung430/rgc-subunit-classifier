@@ -1,257 +1,118 @@
-import numpy as np
+"""Select subunits from network weights by spatial smoothness, and measure their size."""
+
 import math
-import os
-import h5py
-from scipy import stats
-import shapely.geometry as shpgeom
-from src.analysis.fitellipse import fitellipse
 
-def get_morans_i(subunit, crop_x, crop_y):
-	"""This function calculates the spatial autocorrelation as the Moran's I for any putative subunit, i.e., set of weights 
-	to a particular hidden node in the network.
+import numpy as np
 
-	Args:
-		subunit (_type_): _description_
-		crop_x (int): The size of the cropped STA / the input image in the x-dimension, in number of pixels.
-		crop_y (int): The size of the cropped STA / the input image in the y-dimension, in number of pixels.
+from .fitellipse import fitellipse
 
-	Returns:
-		morans_i (float): the MoransI/spatial autocorrelation value for that particular putative subunit
-	"""
-	subunit_norm = subunit - np.mean(np.mean(subunit, axis=1))
-	sum_neighbor_products = 0
-	sum_weights = 0
-	sum_squared_deviations = 0
+# Stimulus pixel size in micrometres on the retina.
+PIXEL_SIZE_UM = 30
 
-	for x in range(crop_x):
-		for y in range(crop_y):
-			if x > 0:
-				sum_neighbor_products = sum_neighbor_products + subunit_norm[x,y] * subunit_norm[x-1,y]
-				sum_weights = sum_weights + 1
-			if x < crop_x - 1:
-				sum_neighbor_products = sum_neighbor_products + subunit_norm[x,y] * subunit_norm[x+1,y]
-				sum_weights = sum_weights + 1
-			if y > 0:
-				sum_neighbor_products = sum_neighbor_products + subunit_norm[x,y] * subunit_norm[x,y-1]
-				sum_weights = sum_weights + 1
-			if y < crop_y - 1:
-				sum_neighbor_products = sum_neighbor_products + subunit_norm[x,y] * subunit_norm[x,y+1]
-				sum_weights = sum_weights + 1
-			sum_squared_deviations = sum_squared_deviations + subunit_norm[x,y]**2
 
-	morans_i = crop_x * crop_y * sum_neighbor_products/sum_weights/sum_squared_deviations
-	return morans_i
+def morans_i(image, mask=None):
+    """Moran's I (4-neighbour spatial autocorrelation) of a 2-D weight map.
 
-def get_subunits(weights, crop_x, crop_y, threshold_morans_i=0.25):
-	"""This function retrieves the identified subunits from the weights of the nodes in the hidden layer of the network.
+    Near 0 for spatially white noise and close to 1 for a smooth blob. With
+    ``mask``, only pixels inside the mask count: the mean is taken over them
+    and only neighbour pairs with both pixels inside contribute. Without it,
+    every pixel of ``image`` counts. Use the ellipse mask for network weights,
+    which are zero outside it by construction: counting those zeros would
+    make any weight map with a consistent sign look smooth.
 
-	Args:
-		weights (num_hidden nodes x num_pixels array): the weights from the input layer to the hidden layer in the neural network
-		crop_x (int): the size of the cropped STA / the input image in the x-dimension, in number of pixels
-		crop_y (int): the size of the cropped STA / the input image in the y-dimension, in number of pixels
-		threshold_morans_i (float): the threshold for the Moran's I value, above which the weights of that hidden node will be
-								   considered a subunit. Defaults to 0.25.
+    Returns:
+        Moran's I, or NaN if the weights inside the mask are all equal (for
+        example, a node whose weights were all driven to zero).
+    """
+    image = np.asarray(image, dtype=float)
+    mask = np.ones(image.shape, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
+    if mask.shape != image.shape:
+        raise ValueError(f"mask has shape {mask.shape}; image has shape {image.shape}")
+    if not mask.any():
+        raise ValueError("mask selects no pixels")
+    deviations = np.where(mask, image - image[mask].mean(), 0.0)
+    products = pairs = 0.0
+    for a, b, both in (
+        (deviations[:-1, :], deviations[1:, :], mask[:-1, :] & mask[1:, :]),
+        (deviations[:, :-1], deviations[:, 1:], mask[:, :-1] & mask[:, 1:]),
+    ):
+        products += 2 * (a * b)[both].sum()  # each neighbour pair counted both ways
+        pairs += 2 * both.sum()
+    squares = (deviations[mask] ** 2).sum()
+    if squares == 0 or pairs == 0:
+        return float("nan")
+    return float(mask.sum() * products / pairs / squares)
 
-	Returns:
-		subunits (num_subunits x num_pixels array): the subunits identified from the weights of the network
-	"""
-	morans_vals = np.zeros((weights.shape[0]))
-	for i in range(weights.shape[0]):
-		curr_moran = get_morans_i(weights[i,:].reshape(crop_x,crop_y), crop_x, crop_y)
-		morans_vals[i] = curr_moran
-	subunit_ind = np.where(morans_vals > threshold_morans_i)[0]
-	subunits = weights[subunit_ind,:]
-	return subunits
 
-def jaccard(a, b):
-	"""This function calculates the Jaccard index of two shapes.
+def morans_i_values(weights, crop_shape, mask=None):
+    """Moran's I of each row of ``weights`` (nodes × crop pixels) on the crop grid."""
+    return np.array([morans_i(row.reshape(crop_shape), mask) for row in np.asarray(weights)])
 
-	Inputs:
-		- a (shpgeom Polygon object): the first shape of interest
-		- b (shpgoem Polygon object): the second shape of interest
 
-	Outputs:
-		- index (float): the Jaccard index of the two shapes.
-	"""
-	intersection = a.intersection(b)
-	union = a.union(b)
-	index = intersection.area / union.area
-	return index
+def get_morans_i(subunit, crop_x, crop_y, mask=None):
+    """Moran's I of one subunit, given as a ``crop_x × crop_y`` (or flat) array."""
+    return morans_i(np.asarray(subunit).reshape(crop_x, crop_y), mask)
 
-def get_stable_solution(cell_num):
-	"""This function retrieves the stable solution for 
-	"""
-	ellipse_sigma = 1.5  # 2d Gaussian elliptical fit
-	
-	data_path = '/content/drive/MyDrive/Colab Notebooks/cell_data_01_NC.mat'
-	stim_path = '/content/drive/MyDrive/Colab Notebooks/Stim Data'
-	STA_path = '/content/drive/MyDrive/Colab Notebooks/STA & Crop'
-	
-	os.chdir('/content/drive/MyDrive/Colab Notebooks/STA & Crop')
-	filename = 'Cell ' + str(cell_num) + ' Uncropped Spatial STA' + '.h5'
-	with h5py.File(filename, mode='r') as f:
-		spatial_STA = f['spatial_STA'][:,:]
-	
-	os.chdir('/content/drive/MyDrive/Colab Notebooks/')
-	ell = fitellipse(spatial_STA, sigma=3)
-	y_max = round(max(ell[1]))
-	y_min = round(min(ell[1]))
-	x_max = round(max(ell[0]))
-	x_min = round(min(ell[0]))
-	crop = (slice(x_min, x_max, None), slice(y_min, y_max, None))
-	
-	spatial_STAc = spatial_STA[crop]
-	crop_x = spatial_STAc.shape[0]
-	crop_y = spatial_STAc.shape[1]
-	
-	# Get the distribution of the number of subunits across all 20 runs
-	num_subunits = []
-	total_vers = 20
-	for ver in range(0,total_vers): 
-		os.chdir('/content/drive/MyDrive/Colab Notebooks/Subunits/All Cells')
-		
-		if ver == 0:
-			filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 100 Epochs Subunits.h5"
-		else:
-			if cell_num == 3 and (ver == 1 or ver == 2):
-				filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 200 Epochs Subunits (" + str(ver) + ").h5"
-			else:
-				filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 100 Epochs Subunits (" + str(ver) + ").h5"
-		
-		with h5py.File(filename, mode='r') as f:
-			subunits = f['subunits'][:,:]
-		
-		num_subunits.append(subunits.shape[0])
 
-	# Find the mode of that distribution and the number of times that mode appears
-	# If there are multiple modes, select the largest one
-	mode_result = stats.mode(num_subunits, keepdims=False)
-	mode = int(mode_result.mode)
-	n_layouts = int(mode_result.count)
+def select_by_morans_i(weights, values, threshold_morans_i):
+    """Rows of ``weights`` whose Moran's I in ``values`` exceeds the threshold.
 
-	# Gather all the subunits from all the layouts as polygon objects
-	polygons = np.zeros((n_layouts), 'O')
-	vers = []
-	counter = 0
+    NaN values (no weight variation) are never selected.
+    """
+    weights, values = np.asarray(weights), np.asarray(values)
+    if len(values) != len(weights):
+        raise ValueError(f"{len(values)} Moran's I values for {len(weights)} weight rows")
+    return weights[np.nan_to_num(values, nan=-np.inf) > threshold_morans_i]
 
-	for ver in range(0,total_vers):
-		
-		os.chdir('/content/drive/MyDrive/Colab Notebooks/Subunits/All Cells')
-		if ver == 0:
-			filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 100 Epochs Subunits.h5"
-		else:
-			if cell_num == 3 and (ver == 1 or ver == 2):
-				filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 200 Epochs Subunits (" + str(ver) + ").h5"
-			else:
-				filename = "Cell " + str(cell_num) + ", 60 Nodes, 0.5 LR, 0.0001 L1 Coeff, 100 Epochs Subunits (" + str(ver) + ").h5"
-			
-		with h5py.File(filename, mode='r') as f:
-			subunits = f['subunits'][:,:]
 
-		if subunits.shape[0] == mode:
-			ellipses = np.array([fitellipse(subunits[i,:].reshape(crop_x,crop_y), sigma=ellipse_sigma) for i in range(subunits.shape[0])])
-			polygons[counter] = np.array([shpgeom.Polygon(el.T) for el in ellipses])
-			counter = counter + 1
-			vers.append(ver)
+def get_subunits(weights, crop_x, crop_y, threshold_morans_i=0.25, mask=None):
+    """Rows of ``weights`` whose Moran's I exceeds the threshold.
 
-	"""For every subunit in a layout:
-	1. Calculate the Jacard index between that subunit and all the other subunits in all other layouts
-	curr_distances: Number of Subunits x Number of Subunits x Number of Runs matrix. For a given Run X,
-	this matrix represents the distances from the subunits in Run X (rows) to all subunits (columns) 
-	in all other runs (3rd dimension). 
-	"""
+    Args:
+        weights: Hidden-node (or encoder) weights, nodes × ``crop_x * crop_y``.
+        crop_x, crop_y: Size of the cropped window.
+        threshold_morans_i: Nodes with Moran's I above this are subunits.
+        mask: Optional boolean ``crop_x × crop_y`` ellipse mask; Moran's I is
+            then computed on the pixels inside it only.
 
-	distances_for_all_layouts = []
+    Returns:
+        The selected rows, subunits × pixels. Nodes whose Moran's I is NaN
+        (no weight variation inside the mask) are never selected.
+    """
+    values = morans_i_values(weights, (crop_x, crop_y), mask)
+    return select_by_morans_i(weights, values, threshold_morans_i)
 
-	for curr_layout in range(n_layouts):
-		curr_distances = np.zeros(shape=(mode,mode,n_layouts))
-		# Distances from subunits in the same layout are excluded
-		curr_distances[:,:,curr_layout] = float("nan")
-		# Take each subunit
-		curr_subunits = polygons[curr_layout]
-		# And calculate the Jaccard index between that subunit and all the other subunits in all other layouts
-		for curr_subunit_ind in range(mode):
-			curr_subunit = curr_subunits[curr_subunit_ind]
-		for other_layout in range(n_layouts):
-			if other_layout == curr_layout:
-				continue
-			else:
-				other_subunits = polygons[other_layout]
-				for other_subunit_ind in range(mode):
-					other_subunit = other_subunits[other_subunit_ind]
-					curr_distances[curr_subunit_ind,other_subunit_ind,other_layout] = jaccard(curr_subunit, other_subunit)
-		distances_for_all_layouts.append(curr_distances)
 
-	"""2. Assess similarity between layouts
-	"""
-	run_similarity = np.zeros(shape=(n_layouts,n_layouts))
-	np.fill_diagonal(run_similarity,float('nan'))
+def _effective_diameter(image, pixel_size_um):
+    """Diameter (µm) of the circle with the area of the 1.5σ Gaussian ellipse."""
+    _, _, d_major, d_minor, _ = fitellipse(image, sigma=1.5, raw=True)
+    area = math.pi * (d_major / 2) * (d_minor / 2)
+    return pixel_size_um * 2 * math.sqrt(area / math.pi)
 
-	for curr_layout in range(n_layouts):
-		distances_for_curr_layout = distances_for_all_layouts[curr_layout]
-		for other_layout in range(n_layouts):
-			if curr_layout == other_layout:
-				continue
-			else:
-				curr_distances = distances_for_curr_layout[:,:,other_layout]
-				smallest_distances = []
-				for subunit in range(mode):
-					curr_smallest_dist_ind = np.unravel_index(np.argmax(curr_distances), curr_distances.shape)
-					row_ind = curr_smallest_dist_ind[0]
-					col_ind = curr_smallest_dist_ind[1]
 
-					curr_smallest_dist = curr_distances[curr_smallest_dist_ind]
-					smallest_distances.append(curr_smallest_dist)
+def get_subunit_sizes(subunits, crop_x, crop_y, ignore_negative=True,
+                      pixel_size_um=PIXEL_SIZE_UM):
+    """Effective diameter of each subunit in micrometres.
 
-					curr_distances[row_ind,:].fill(-1)
-					curr_distances[:,col_ind].fill(-1)
-					run_similarity[curr_layout,other_layout] = np.mean(np.asarray(smallest_distances))
+    Args:
+        subunits: Subunits × ``crop_x * crop_y`` weights.
+        crop_x, crop_y: Size of the cropped window.
+        ignore_negative: If true, subunits with negative mean weight get NaN.
+        pixel_size_um: Stimulus pixel size on the retina.
 
-	avg_similarity = np.nanmean(run_similarity,axis=0)
-	stable_ver = vers[np.argmax(avg_similarity)]
-	return stable_ver
+    Returns:
+        One diameter per subunit, in input order (NaN where ignored).
+    """
+    subunits = np.asarray(subunits)
+    sizes = np.full(len(subunits), np.nan)
+    for index, row in enumerate(subunits):
+        image = row.reshape(crop_x, crop_y)
+        if ignore_negative and image.mean() < 0:
+            continue
+        sizes[index] = _effective_diameter(image, pixel_size_um)
+    return sizes
 
-def get_subunit_sizes(subunits, crop_x, crop_y, ignore_negative=True):
-	"""This function calculates the size of the receptive field subunits of the cell in terms of their effective diameter.
 
-	Args:
-		subunits (n x crop_x*crop_y matrix): Matrix representing the identified subunits for the cell, where n is the total number of identified subunits
-											 and crop_x*crop_y is the number of pixels in the cropping window.
-		crop_x (int): Size of the cropping window along the x-direction.
-		crop_y (int): Size of the cropping window along the y-direction.
-		ignore_negative (bool, optional): If true, ignores any negative subunits when calculing subunit sizes. Defaults to True.
-
-	Returns:
-		diameters (list of length n): List of the effective diameters for each subunit.
-	"""
-	diameters = []
-	num_subunits = subunits.shape[0]
-
-	for subunit_ind in range(num_subunits):
-		curr_subunit = subunits[subunit_ind,:].reshape(crop_x, crop_y)
-		if ignore_negative:
-			if np.mean(curr_subunit) < 0:
-				continue
-		ell_properties = fitellipse(curr_subunit, sigma=1.5, raw=True)
-		r_major = ell_properties[2]/2
-		r_minor = ell_properties[3]/2
-		area = math.pi * r_major * r_minor
-		effective_diameter = 30 * 2 * math.sqrt(area/math.pi)
-		diameters.append(effective_diameter)
-	return diameters
-
-def get_rf_size(rf):
-	"""This function calculates the size of the receptive field of the cell in terms of its effective diameter.
-
-	Args:
-		rf (_type_): _description_
-
-	Returns:
-		effective_diameter (float): the effective diameter of the receptive field for the given cell.
-	"""
-	ell_properties = fitellipse(rf, sigma=1.5, raw=True)
-	r_major = ell_properties[2]/2
-	r_minor = ell_properties[3]/2
-	area = math.pi * r_major * r_minor
-	effective_diameter = 30*2*math.sqrt(area/math.pi)
-	return effective_diameter
+def get_rf_size(rf, pixel_size_um=PIXEL_SIZE_UM):
+    """Effective diameter (µm) of a receptive field from its 1.5σ ellipse."""
+    return _effective_diameter(np.asarray(rf), pixel_size_um)
