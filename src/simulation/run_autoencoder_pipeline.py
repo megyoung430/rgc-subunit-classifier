@@ -5,14 +5,17 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from scipy import io as spio
 from sklearn.model_selection import train_test_split
 
 from ..analysis.analyze_subunits import get_subunits
+from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_autoencoder import (
-    EnsembleDataset, SubunitAutoencoder, run_autoencoder,
+    EnsembleDataset,
+    SubunitAutoencoder,
+    run_autoencoder,
 )
 from .generate_training_data import crop_sta, gen_eses, gen_sta
+from .run_pipeline import _subfolder
 
 
 @dataclass
@@ -55,14 +58,18 @@ def run_autoencoder_model(
     random_state=0,
     max_trials=None,
     morans_threshold=0.25,
+    cache_dir=None,
 ):
     """Extract candidate subunits using spike-triggered reconstruction.
 
     The returned ``node_weights`` and ``subunits`` have exactly the same shapes
-    and Moran's-I selection semantics as ``run_subunit_model``.
+    and Moran's-I selection semantics as ``run_subunit_model``; ``sta_path``
+    and ``cache_dir`` cache inputs in the same way.
     """
     torch.manual_seed(random_state)
-    spike_data = spio.loadmat(data_path)["spk1"]
+    spike_data = load_spike_data(
+        data_path, _subfolder(cache_dir, "spikes"), keys=("spk1",)
+    )["spk1"]
     if not 0 <= cell_num < len(spike_data):
         raise IndexError(f"cell_num must be between 0 and {len(spike_data) - 1}")
     spikecounts = spike_data[cell_num]
@@ -82,9 +89,14 @@ def run_autoencoder_model(
         num_frames, num_trials, sta_path=sta_path, stim_path=stim_path,
     )
     cropped_sta, crop, ellipse_mask = crop_sta(spatial_sta, sigma)
+    stimuli = cropped_stimulus(
+        stim_path, crop, stimulus_width, stimulus_height, num_frames, num_trials,
+        _subfolder(cache_dir, "stimuli"),
+    )
     ensembles = gen_eses(
         stimulus_width, stimulus_height, spikecounts, temporal_sta, cropped_sta,
-        crop, ellipse_mask, filter_length, num_frames, num_trials, stim_path,
+        crop, ellipse_mask, filter_length, num_frames, num_trials,
+        stimuli=stimuli,
     )
     train_values, valid_values = train_test_split(
         ensembles, test_size=0.25, random_state=random_state

@@ -51,18 +51,44 @@ convention. Do not transpose or change memory order without validating the STA.
 The actual frozen response is the mean `spk2` count across repeats, divided by
 `dt = 1/30 s` to yield Hz.
 
-## STA cache and the Colab archive
+## Caches
 
-Passing `sta_path="results/sta_cache"` (the scripts' default) caches each cell's
-STA in one file, `Cell N STA <key>.h5`, with keys `STA` (shape `(30000, 20)`),
-`spatial_STA` (`(200, 150)`) and `temp_STA` (`(20,)`). `<key>` is a hash of the
-spike counts used, the stimulus size, the filter length, and the stimulus folder
-with each trial file's name, size and modification time. A run on a subset of
-trials (`max_trials` below 219) or on another stimulus folder therefore computes
-and caches its own STA. A cache hit checks the stimulus files' sizes and times
-but reads none of them. Cache files are written whole or not at all and never
-overwritten; delete `results/sta_cache/` to force a recompute. Omitting
-`sta_path` recomputes the STA without caching.
+All caches live under `results/cache/` (the scripts' defaults) and are
+git-ignored. They never change results and only cost time to rebuild: delete a
+folder to force a recompute. Cache files are written whole or not at all, get
+the same permissions as any new file, and are never overwritten, so an
+interrupted run leaves nothing half-written and two runs sharing a cache do not
+collide. Every key that depends on the stimulus includes the stimulus folder
+and each file's name, size and modification time, so another stimulus folder
+(a shuffled control, say) is never served a cached value. A cache hit checks
+those sizes and times but reads no stimulus file.
+
+- `results/cache/sta/` (`sta_path`): one file per cell, `Cell N STA <key>.h5`,
+  with keys `STA` (shape `(30000, 20)`), `spatial_STA` (`(200, 150)`) and
+  `temp_STA` (`(20,)`). `<key>` also covers the spike counts and filter length
+  and, of the stimulus, the trial files actually used, so a run on a subset of
+  trials (`max_trials` below 219) computes its own STA.
+- `results/cache/spikes/` (`cache_dir`): the `spk1`/`spk2` variables of the
+  cell `.mat` file as a compressed `.npz` named by a hash of the `.mat` file's
+  content. Within one Python session the arrays are also reused in memory.
+- `results/cache/stimuli/` (`cache_dir`): for each crop, the running-noise
+  stimulus cut to that crop, trial first (`stimulus <key> x.. y.. <n> trials.npy`),
+  and the cropped frozen stimulus. Training data and both model fits read this
+  one memory-mapped file instead of all the trial files. Its key covers every
+  `stim####.h5` file in the stimulus folder, so adding or replacing a trial file
+  starts a new cache.
+
+The stimulus cache is the large one: each file holds trials × crop pixels ×
+1500 frames values (int8 for the real stimulus), about 150 MB for a typical
+cell at 219 trials. There is one file per crop and trial count, and the crop
+depends on the STA, which depends on the trials used, so a data-fraction or
+sigma sweep usually writes a new file for every cell, fraction and sigma. A run
+on fewer trials reuses an existing file only when the crop is the same. Nothing
+is pruned automatically; delete `results/cache/stimuli/` when it grows too
+large. A run killed mid-write can leave a hidden `.<name>.<random>.npy` file
+there, which is safe to delete.
+
+Omitting `sta_path` or `cache_dir` reads the inputs without caching them.
 
 `results/colab_legacy/` holds the outputs of the original Colab analysis
 (STAs in `sta/`, subunits, and classifier, STNMF and LN performance tables),
