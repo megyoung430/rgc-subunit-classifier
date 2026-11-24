@@ -7,3 +7,5 @@ __pycache__/
 imported_from_colab/
 
 # Generated outputs can be large; keep only intentionally tracked results.
+/results/*
+!/results/colab_legacy/
