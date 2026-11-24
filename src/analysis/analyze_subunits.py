@@ -28,6 +28,8 @@ def morans_i(image, mask=None):
     mask = np.ones(image.shape, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
     if mask.shape != image.shape:
         raise ValueError(f"mask has shape {mask.shape}; image has shape {image.shape}")
+    if not mask.any():
+        raise ValueError("mask selects no pixels")
     deviations = np.where(mask, image - image[mask].mean(), 0.0)
     products = pairs = 0.0
     for a, b, both in (
@@ -52,6 +54,17 @@ def get_morans_i(subunit, crop_x, crop_y, mask=None):
     return morans_i(np.asarray(subunit).reshape(crop_x, crop_y), mask)
 
 
+def select_by_morans_i(weights, values, threshold_morans_i):
+    """Rows of ``weights`` whose Moran's I in ``values`` exceeds the threshold.
+
+    NaN values (no weight variation) are never selected.
+    """
+    weights, values = np.asarray(weights), np.asarray(values)
+    if len(values) != len(weights):
+        raise ValueError(f"{len(values)} Moran's I values for {len(weights)} weight rows")
+    return weights[np.nan_to_num(values, nan=-np.inf) > threshold_morans_i]
+
+
 def get_subunits(weights, crop_x, crop_y, threshold_morans_i=0.25, mask=None):
     """Rows of ``weights`` whose Moran's I exceeds the threshold.
 
@@ -66,9 +79,8 @@ def get_subunits(weights, crop_x, crop_y, threshold_morans_i=0.25, mask=None):
         The selected rows, subunits × pixels. Nodes whose Moran's I is NaN
         (no weight variation inside the mask) are never selected.
     """
-    weights = np.asarray(weights)
     values = morans_i_values(weights, (crop_x, crop_y), mask)
-    return weights[np.nan_to_num(values, nan=-np.inf) > threshold_morans_i]
+    return select_by_morans_i(weights, values, threshold_morans_i)
 
 
 def _effective_diameter(image, pixel_size_um):

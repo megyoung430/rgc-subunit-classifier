@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from torch.utils.data import WeightedRandomSampler
 
-from ..analysis.analyze_subunits import morans_i_values
+from ..analysis.analyze_subunits import morans_i_values, select_by_morans_i
 from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_classifier import (
     SpikeClassifier,
@@ -184,7 +184,7 @@ def run_subunit_model(
     node_weights = np.zeros((node_num, cropped_sta.size))
     node_weights[:, ellipse_mask.ravel()] = compact_weights
     morans_values = morans_i_values(node_weights, cropped_sta.shape, ellipse_mask)
-    subunits = node_weights[np.nan_to_num(morans_values, nan=-np.inf) > morans_threshold]
+    subunits = select_by_morans_i(node_weights, morans_values, morans_threshold)
     if subunits_save_path is not None:
         suffix = "" if version == 0 else f" ({version})"
         filename = (

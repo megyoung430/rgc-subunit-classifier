@@ -7,6 +7,7 @@ from src.analysis.analyze_subunits import (
     get_subunit_sizes,
     get_subunits,
     morans_i,
+    select_by_morans_i,
 )
 from src.analysis.fitellipse import fitellipse
 
@@ -92,3 +93,16 @@ def test_subunit_sizes_keep_one_entry_per_subunit():
     assert get_subunit_sizes(np.stack([blob]), 20, 20, pixel_size_um=60)[0] == pytest.approx(
         2 * sizes[0])
     assert get_rf_size(blob.reshape(20, 20)) == pytest.approx(sizes[0])
+
+
+def test_an_empty_mask_is_an_error():
+    with pytest.raises(ValueError, match="no pixels"):
+        morans_i(np.ones((3, 3)), np.zeros((3, 3), dtype=bool))
+
+
+def test_selection_skips_nan_and_checks_lengths():
+    weights = np.arange(6.0).reshape(3, 2)
+    chosen = select_by_morans_i(weights, np.array([0.9, np.nan, 0.1]), 0.25)
+    np.testing.assert_array_equal(chosen, weights[:1])
+    with pytest.raises(ValueError, match="values for"):
+        select_by_morans_i(weights, np.array([0.9]), 0.25)
