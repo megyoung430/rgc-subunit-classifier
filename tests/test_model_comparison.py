@@ -62,3 +62,8 @@ def test_layout_similarity_is_order_invariant_and_stability_selects_consensus():
     assert index in {0, 1}
     assert set(eligible) == {0, 1, 2}
     assert scores[index] > scores[2]
+
+
+def test_ceiling_without_any_defined_split_is_an_error():
+    with pytest.raises(ValueError, match="noise ceiling"):
+        correlation_ceiling(np.zeros((50, 4)))

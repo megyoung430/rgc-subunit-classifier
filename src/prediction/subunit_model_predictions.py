@@ -69,6 +69,3 @@ def get_subunit_predictions(
     correlation = np.corrcoef(actual[filter_length:], predictions)[0, 1]
     return predictions, correlation, actual, np.arange(num_frames) * dt
 
-
-gen_subunit_model = gen_subunit_model
-get_subunit_predictions = get_subunit_predictions

@@ -10,7 +10,11 @@ from matplotlib import pyplot as plt
 from src.analysis.model_comparison import correlation_ceiling, prediction_metrics
 from src.data_cache import cropped_stimulus, load_spike_data
 from src.outputs import check_output_dir
-from src.prediction.sta_model_predictions import gen_sta_model, get_sta_predictions
+from src.prediction.sta_model_predictions import (
+    gen_sta_model,
+    get_sta_predictions,
+    separable_ln_filter,
+)
 from src.prediction.subunit_model_predictions import (
     gen_subunit_model,
     get_subunit_predictions,
@@ -58,7 +62,7 @@ def main(argv=None):
         width, height, spikecounts, args.cell, filter_length, num_frames,
         num_trials, sta_path=args.sta, stim_path=args.stimuli,
     )
-    cropped_sta, crop, _ = crop_sta(spatial_sta, args.sigma)
+    cropped_sta, crop, ellipse_mask = crop_sta(spatial_sta, args.sigma)
     crop_shape = cropped_sta.shape
     stac = sta.reshape(width, height, filter_length)[crop].reshape(
         cropped_sta.size, filter_length
@@ -68,20 +72,31 @@ def main(argv=None):
         Path(args.cache) / "stimuli",
     )
 
-    print("1/4 Fitting the LN model...")
-    ln_parameters = gen_sta_model(
-        width, height, spikecounts, crop, *crop_shape, filter_length,
-        num_frames, num_trials, stac, args.stimuli, stimuli=stimuli,
-    )
-    ln_predictions, ln_correlation, actual, time = get_sta_predictions(
-        args.cell, ln_parameters, stac, crop, *crop_shape,
-        args.data, args.stimuli, filter_length=filter_length,
-        cache_dir=args.cache,
-    )
+    # 1. Fit the LN baseline on running noise. The comparison LN filter is
+    # the masked spatial STA times the temporal STA, the same structure as
+    # the subunit model; the full STA is fitted too for reference.
+    print("1/4 Fitting the LN models...")
+
+    def fit_ln(weights):
+        parameters = gen_sta_model(
+            width, height, spikecounts, crop, *crop_shape, filter_length,
+            num_frames, num_trials, weights, args.stimuli, stimuli=stimuli,
+        )
+        predictions, _, actual, time = get_sta_predictions(
+            args.cell, parameters, weights, crop, *crop_shape,
+            args.data, args.stimuli, filter_length=filter_length,
+            cache_dir=args.cache,
+        )
+        return parameters, predictions, actual, time
+
+    ln_filter = separable_ln_filter(spatial_sta, temporal_sta, crop, ellipse_mask)
+    ln_parameters, ln_predictions, actual, time = fit_ln(ln_filter)
+    _, full_sta_predictions, _, _ = fit_ln(stac)
     repeats = load_spike_data(args.data, Path(args.cache) / "spikes", keys=("spk2",))["spk2"]
     ceiling = correlation_ceiling(repeats[args.cell], filter_length, seed=args.seed)
-    ln_metrics = prediction_metrics(
-        actual, ln_predictions, filter_length, ceiling=ceiling.max_correlation
+    ln_metrics, full_sta_metrics = (
+        prediction_metrics(actual, predictions, filter_length, ceiling=ceiling.max_correlation)
+        for predictions in (ln_predictions, full_sta_predictions)
     )
 
     print("2/4 Training the subunit autoencoder...")
@@ -134,7 +149,7 @@ def main(argv=None):
 
     print("4/4 Saving frozen-noise comparison...")
     figure, axis = plt.subplots(figsize=(10, 4))
-    plot_predictions(ln_predictions, actual, time, filter_length, label="LN", ax=axis)
+    plot_predictions(ln_predictions, actual, time, filter_length, label="LN (separable)", ax=axis)
     axis.plot(time[filter_length:], subunit_predictions, label="Autoencoder subunit model")
     axis.legend()
     figure.tight_layout()
@@ -154,8 +169,13 @@ def main(argv=None):
             "reliability": ceiling.reliability,
         },
         "ln_model": {
+            "filter": "masked spatial STA x temporal STA",
             "correlation": ln_metrics.correlation, "mse": ln_metrics.mse,
             "normalized_correlation": ln_metrics.normalized_correlation,
+        },
+        "ln_model_full_sta": {
+            "correlation": full_sta_metrics.correlation, "mse": full_sta_metrics.mse,
+            "normalized_correlation": full_sta_metrics.normalized_correlation,
         },
         "subunit_model": {
             "correlation": subunit_metrics.correlation, "mse": subunit_metrics.mse,

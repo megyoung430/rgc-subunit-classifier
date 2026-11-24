@@ -135,8 +135,16 @@ it. Do not use the permissive smoke-run threshold (`-1`) for scientific results.
 
 ## LN model
 
-The cropped spatiotemporal STA linearly filters each running-noise history. The
-filtered values are divided into quantile bins and paired with mean firing rate.
+The LN filter is separable: the cropped spatial STA, set to zero outside the
+ellipse mask, times the temporal STA (`separable_ln_filter`). This is the same
+structure as the subunit model (spatial maps inside the ellipse, one shared
+temporal filter), so the LN-versus-subunit comparison isolates the subunit
+nonlinearity. The demos also report the full cropped spatiotemporal STA as
+`ln_model_full_sta` for reference; it has an independent, noisy weight for every
+pixel and lag and predicts held-out responses worse for that reason alone (cell
+0, 20 trials: r = 0.16 against 0.36 for the separable filter).
+
+The LN filter linearly filters each running-noise history. The filtered values are divided into quantile bins and paired with mean firing rate.
 A three-parameter softplus is fit:
 
 ```text
@@ -167,8 +175,8 @@ stimulus. The observed rate is the repeat-averaged `spk2 / dt`.
 
 AIC/BIC are not used. Both models are scored on held-out frames, where
 information criteria do not apply, and their parameter counts are not
-comparable: the LN filter is the full spatiotemporal STA, while the subunit
-model's spatial filters come from a network fitted to other data.
+comparable: the LN filter comes from the STA, while the subunit model's
+spatial filters come from a network fitted to other data.
 
 ## Stability across repeated training
 

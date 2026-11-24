@@ -79,6 +79,16 @@ def prediction_metrics(actual, predicted, filter_length=None, ceiling=None):
     )
 
 
+def _split_half_correlation(repeats, order):
+    """Correlation between the average responses of two halves of the repeats."""
+    half = len(order) // 2
+    first = repeats[:, order[:half]].mean(axis=1)
+    second = repeats[:, order[half:]].mean(axis=1)
+    if first.std() == 0 or second.std() == 0:
+        return np.nan
+    return np.corrcoef(first, second)[0, 1]
+
+
 def correlation_ceiling(repeats, filter_length=0, n_splits=200, seed=0):
     """Noise ceiling for correlation with the trial-averaged frozen-noise response.
 
@@ -95,19 +105,24 @@ def correlation_ceiling(repeats, filter_length=0, n_splits=200, seed=0):
         seed: Seed for the splits.
 
     Raises:
-        ValueError: With fewer than 2 repeats.
+        ValueError: With fewer than 2 repeats, or if no split gives a
+            defined correlation.
     """
     repeats = np.asarray(repeats, dtype=float)[filter_length:]
     n_repeats = repeats.shape[1]
     if n_repeats < 2:
         raise ValueError("a split-half noise ceiling needs at least 2 repeats")
     rng = np.random.default_rng(seed)
-    correlations = []
-    for _ in range(n_splits):
-        order = rng.permutation(n_repeats)
-        half = n_repeats // 2
-        first, second = repeats[:, order[:half]].mean(axis=1), repeats[:, order[half:]].mean(axis=1)
-        correlations.append(np.corrcoef(first, second)[0, 1])
+    correlations = np.array([
+        _split_half_correlation(repeats, rng.permutation(n_repeats)) for _ in range(n_splits)
+    ])
+    if np.isnan(correlations).all():
+        raise ValueError(
+            "every split half has a constant average response (no spikes, or "
+            "too few frames), so no noise ceiling can be estimated"
+        )
+    # A split can be NaN when one half happens to contain no spikes; the
+    # ceiling averages over the splits that are defined.
     r = float(np.nanmean(correlations))
     reliability = max(0.0, 2 * r / (1 + r)) if r > -1 else 0.0
     return NoiseCeiling(reliability, float(np.sqrt(reliability)), len(repeats))

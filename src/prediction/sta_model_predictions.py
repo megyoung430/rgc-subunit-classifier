@@ -52,6 +52,25 @@ def _frozen_inputs(cell_num, crop, data_path, stim_frz_path, cache_dir):
     return spikecounts, stimulus
 
 
+def separable_ln_filter(spatial_sta, temporal_sta, crop, mask):
+    """Masked spatial STA times temporal STA, shaped like the cropped full STA.
+
+    This LN filter has the same structure as the subunit models (spatial maps
+    inside the ellipse, one shared temporal filter), so comparing the two
+    isolates the effect of the subunit nonlinearity. The full cropped STA has
+    an independent, noisy weight for every pixel and lag, and predicts held-out
+    responses worse for that reason alone.
+
+    Returns:
+        Crop pixels (C order) × lags, the layout ``gen_sta_model`` expects.
+    """
+    spatial = np.asarray(spatial_sta)[crop]
+    mask = np.asarray(mask, dtype=bool)
+    if mask.shape != spatial.shape:
+        raise ValueError(f"mask has shape {mask.shape}; the crop has shape {spatial.shape}")
+    return np.outer(np.where(mask, spatial, 0.0).ravel(), np.asarray(temporal_sta))
+
+
 def gen_sta_model(
     x, y, spikecounts, crop, crop_x, crop_y, filter_length, num_frames,
     num_trials, stac, stim_path, dt=1 / 30, stimuli=None,

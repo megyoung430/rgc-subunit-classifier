@@ -271,7 +271,7 @@ Tutorial output directories contain:
 
 | File | Contents |
 |---|---|
-| `summary.json` | Configuration and LN/subunit performance metrics |
+| `summary.json` | Configuration, noise ceiling, and metrics for the separable LN, full-STA LN and subunit models |
 | `model_predictions.npz` | Actual rate, time, predictions, nonlinearities, combination weights |
 | `*_weights_and_subunits.npz` | Full spatial weights, selected subunits, ellipse mask |
 | `*_node_weights.png` | Every hidden/encoder spatial weight |
