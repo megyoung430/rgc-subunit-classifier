@@ -1,4 +1,6 @@
 import csv
+import dataclasses
+import os
 import importlib.util
 import shutil
 from pathlib import Path
@@ -20,6 +22,9 @@ from src.analysis.sweeps import (
     run_identifier,
     run_sweep,
 )
+
+from src.simulation.run_autoencoder_pipeline import AutoencoderResult
+from src.simulation.run_pipeline import PipelineResult
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -114,21 +119,30 @@ def test_dry_run_with_a_cache_folder_writes_nothing(tmp_path):
     assert not (tmp_path / "out").exists()
 
 
-def fake_result(**extra):
-    return SimpleNamespace(
+def fake_result(result_type, **values):
+    """A real result dataclass with small arrays in the fields the sweep reads."""
+    common = dict(
         node_weights=np.zeros((2, 4)), subunits=np.zeros((1, 4)),
         losses={"train": [0.5, 0.4], "valid": [0.6, 0.55]}, ellipse_mask=np.ones((2, 2), bool),
         morans_i=np.array([0.3, 0.1]), split_trials={"test": np.array([1])},
-        validation_loss=0.55, test_loss=0.58, **extra,
+        validation_loss=0.55, test_loss=0.58,
     )
+    fields = {field.name: None for field in dataclasses.fields(result_type)}
+    unknown = set(common) - set(fields)
+    assert not unknown, f"{result_type.__name__} has no fields {unknown}"
+    return result_type(**{**fields, **common, **values})
+
+
+def classifier_result():
+    return fake_result(PipelineResult, accuracies={"train": [], "valid": []},
+                       test_accuracy=0.9, test_balanced_accuracy=0.7, test_auc=0.8)
 
 
 def test_summary_rows_report_the_same_measures_for_both_models(tmp_path, monkeypatch):
     mat, stim = tiny_inputs(tmp_path, trials=3)
-    monkeypatch.setattr(sweeps, "run_subunit_model", lambda **kw: fake_result(
-        accuracies={"train": [], "valid": []}, test_accuracy=0.9,
-        test_balanced_accuracy=0.7, test_auc=0.8))
-    monkeypatch.setattr(sweeps, "run_autoencoder_model", lambda **kw: fake_result())
+    monkeypatch.setattr(sweeps, "run_subunit_model", lambda **kw: classifier_result())
+    monkeypatch.setattr(sweeps, "run_autoencoder_model",
+                        lambda **kw: fake_result(AutoencoderResult, input_scale=1.0))
     rows = run_sweep(one_config(1.0, models=("classifier", "autoencoder")), data_path=mat,
                      stim_path=stim, sta_path=None, output_dir=tmp_path / "out")
     by_model = {row["model"]: row for row in rows}
@@ -196,3 +210,24 @@ def test_sweep_scripts_exit_non_zero_when_a_run_fails(tmp_path, monkeypatch, scr
     if script == "run_data_fraction_sweep.py":
         args += ["--fractions", "1"]
     assert module.main(args) == 1
+
+
+def test_run_ids_ignore_stimulus_modification_times(tmp_path):
+    mat, stim = tiny_inputs(tmp_path, trials=3)
+    common = dict(data_path=mat, stim_path=stim, sta_path=None,
+                  output_dir=tmp_path / "out", dry_run=True)
+    (first,) = run_sweep(one_config(1.0), **common)
+    for path in stim.iterdir():
+        os.utime(path, (1, 1))
+    (again,) = run_sweep(one_config(1.0), **common)
+    assert again["run_id"] == first["run_id"]
+
+
+def test_a_result_that_cannot_be_summarized_leaves_no_artifact(tmp_path, monkeypatch):
+    mat, stim = tiny_inputs(tmp_path, trials=3)
+    monkeypatch.setattr(sweeps, "run_subunit_model", lambda **kw: classifier_result())
+    monkeypatch.setattr(sweeps, "_result_row", lambda result: 1 / 0)
+    (row,) = run_sweep(one_config(1.0), data_path=mat, stim_path=stim, sta_path=None,
+                       output_dir=tmp_path / "out")
+    assert row["status"] == "failed"
+    assert not Path(row["artifact"]).exists()

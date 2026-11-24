@@ -35,6 +35,7 @@ class PipelineResult:
     ellipse_mask: np.ndarray
     losses: dict
     accuracies: dict
+    validation_loss: float
     test_loss: float
     test_accuracy: float
     test_balanced_accuracy: float
@@ -194,7 +195,8 @@ def run_subunit_model(
         save_subunits(Path(subunits_save_path) / filename, subunits)
     return PipelineResult(
         model, subunits, node_weights, sta, spatial_sta, temporal_sta, crop,
-        ellipse_mask, losses, accuracies, metrics.loss, metrics.accuracy,
+        ellipse_mask, losses, accuracies, min(losses["valid"]),
+        metrics.loss, metrics.accuracy,
         metrics.balanced_accuracy, metrics.auc,
         {name: np.unique(trial_ids[index]) for name, index in
          (("train", train_index), ("valid", valid_index), ("test", test_index))},

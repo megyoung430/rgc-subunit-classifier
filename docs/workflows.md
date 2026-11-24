@@ -60,7 +60,7 @@ Classifier result fields:
 | `split_trials` | Trials in the train, valid and test sets |
 
 Autoencoder result fields are analogous, with `validation_loss` (restored
-state), `test_loss` (held-out trials) and `n_examples` replacing the
+state; class-balanced cross-entropy for the classifier), `test_loss` (held-out trials) and `n_examples` replacing the
 classifier's accuracy metrics.
 
 ## Hyperparameter sweeps
@@ -112,16 +112,16 @@ results/sweeps/<name>/
 ```
 
 The run ID hashes the run's settings (including learning rate, batch size and
-patience), the code version (a hash of every file under `src/`), the content of
-the spike file, and the stimulus files' names, sizes and modification times. It
-does not depend on where the data are stored. A repeated command skips rows
+patience), the code version (a hash of every Python file under `src/`), the
+content of the spike file, and the stimulus files' names and sizes. It does not
+depend on where the data are stored or when they were copied. A repeated command skips rows
 marked `complete`; failed rows are retried; a re-run after a code change trains
 again. `--fail-fast` stops at the first error; otherwise the sweep records it,
 continues, and exits with status 1. A `summary.csv` from an older format is
 refused: use a new output folder.
 
 Summary columns are the same for both models: `validation_loss` (restored
-state), `test_loss` (held-out trials; cross-entropy for the classifier,
+state; class-balanced cross-entropy for the classifier), `test_loss` (held-out trials; cross-entropy for the classifier,
 reconstruction error for the autoencoder), and for the classifier
 `test_balanced_accuracy` and `test_auc`. Artifacts contain spatial weights,
 selected subunits, each node's Moran's I, the ellipse mask, losses, available

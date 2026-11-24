@@ -144,6 +144,15 @@ def _save_artifact(path, result):
     write_new_file(path, lambda temporary: np.savez_compressed(temporary, **arrays))
 
 
+def _stimulus_identity(stim_path, num_trials):
+    """Names and sizes of the stimulus files a run uses.
+
+    Unlike the cache fingerprint, this leaves out the folder and the
+    modification times, so copying the data elsewhere keeps the run IDs.
+    """
+    return [[name, size] for name, size, _ in stimulus_fingerprint(stim_path, num_trials)["files"]]
+
+
 def _result_row(result):
     """Summary measures, identical in meaning for both models (loss units differ)."""
     return {
@@ -170,8 +179,8 @@ def run_sweep(
     """Execute configurations, saving one artifact and one summary row per run.
 
     Each run's ID hashes its settings, ``patience``, the code version, the
-    content of the spike file and the stimulus files' names, sizes and
-    modification times (not where they are stored). Completed IDs in
+    content of the spike file and the stimulus files' names and sizes (not
+    where they are stored or when they were copied). Completed IDs in
     ``summary.csv`` are skipped, so an interrupted sweep resumes with the same
     command; failed rows are retried. ``sta_path`` and ``cache_dir`` are
     caches and do not change results, so they are not part of the ID.
@@ -194,7 +203,7 @@ def run_sweep(
         identity = {
             **config, "patience": patience, "code_version": version,
             "spikes": data_digest,
-            "stimulus": stimulus_fingerprint(stim_path, config["max_trials"])["files"],
+            "stimulus": _stimulus_identity(stim_path, config["max_trials"]),
         }
         identifier = run_identifier(identity)
         if identifier not in completed:
@@ -226,8 +235,11 @@ def run_sweep(
             pipeline = {"classifier": run_subunit_model,
                         "autoencoder": run_autoencoder_model}[config["model"]]
             result = pipeline(**common)
+            # Build the row first, so a result that cannot be summarized
+            # leaves no artifact behind to block the retry.
+            measures = _result_row(result)
             _save_artifact(artifact_path, result)
-            row.update(status="complete", error="", **_result_row(result))
+            row.update(status="complete", error="", **measures)
         except Exception as error:
             # Recorded and retried on the next run; the sweep scripts exit
             # non-zero when any row failed.
