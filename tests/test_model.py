@@ -103,3 +103,9 @@ def test_patience_without_validation_data_is_an_error():
     x, y = separable(20)
     with pytest.raises(ValueError, match="patience"):
         run_model(SpikeClassifier(2, 3), train_set=SpikeDataset(x, y), n_epochs=2, patience=1)
+
+
+def test_zero_epochs_is_an_error():
+    x, y = separable(20)
+    with pytest.raises(ValueError, match="n_epochs"):
+        run_model(SpikeClassifier(2, 3), train_set=SpikeDataset(x, y), n_epochs=0)

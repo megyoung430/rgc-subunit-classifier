@@ -179,13 +179,11 @@ def run_model(
         raise ValueError("train_set is required")
     if patience is not None and valid_set is None:
         raise ValueError("patience needs a valid_set to measure improvement on")
+    if n_epochs < 1:
+        raise ValueError(f"n_epochs must be at least 1, not {n_epochs}")
     if sampler is not None:
         shuffle = False
     training = DataLoader(train_set, batch_size=batch_size, shuffle=shuffle, sampler=sampler)
-    validation = (
-        DataLoader(valid_set, batch_size=batch_size, shuffle=False)
-        if valid_set is not None else None
-    )
     optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=L2_coeff)
     scheduler = (
         torch.optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step, gamma=scheduler_gamma)
@@ -198,7 +196,7 @@ def run_model(
         losses["train"].append(train_loss)
         accuracies["train"].append(train_accuracy)
         message = f"Epoch {epoch + 1}: loss={train_loss:.6g}, accuracy={train_accuracy:.3f}"
-        if validation is not None:
+        if valid_set is not None:
             p, y = _predict(model, valid_set, max(batch_size, 1024))
             valid_loss = _balanced_bce(p, y).item()
             valid_accuracy = float(((p >= 0.5).float() == y).float().mean())

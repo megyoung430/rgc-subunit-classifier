@@ -66,3 +66,8 @@ def test_patience_without_validation_data_is_an_error():
     data = EnsembleDataset(signed_ensembles(20))
     with pytest.raises(ValueError, match="patience"):
         run_autoencoder(SubunitAutoencoder(4, 2), data, n_epochs=2, patience=1)
+
+
+def test_zero_epochs_is_an_error():
+    with pytest.raises(ValueError, match="n_epochs"):
+        run_autoencoder(SubunitAutoencoder(4, 2), EnsembleDataset(signed_ensembles(20)), n_epochs=0)

@@ -142,6 +142,8 @@ def run_autoencoder(
     )
     losses = {"train": [], "valid": []}
     best_loss, best_state, epochs_without_improvement = float("inf"), None, 0
+    if n_epochs < 1:
+        raise ValueError(f"n_epochs must be at least 1, not {n_epochs}")
     for _ in range(n_epochs):
         losses["train"].append(_epoch(
             model, train_loader, optimizer, l1_coefficient,
