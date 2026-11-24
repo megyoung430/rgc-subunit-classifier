@@ -1,0 +1,119 @@
+import errno
+import os
+import stat
+
+import pytest
+
+from src.outputs import (
+    ARCHIVE_MARKER,
+    check_new_output,
+    check_output_dir,
+    write_new_file,
+)
+
+
+def test_new_output_inside_archive_is_refused(tmp_path):
+    archive = tmp_path / "results" / "colab_legacy"
+    (archive / "sta").mkdir(parents=True)
+    with pytest.raises(PermissionError):
+        check_new_output(archive / "sta" / "new.h5", archive=archive)
+    with pytest.raises(PermissionError):
+        check_output_dir(archive / "sweeps", archive=archive)
+
+
+def test_existing_file_is_never_overwritten(tmp_path):
+    existing = tmp_path / "subunits.h5"
+    existing.write_bytes(b"saved")
+    with pytest.raises(FileExistsError):
+        check_new_output(existing, archive=tmp_path / "archive")
+    assert existing.read_bytes() == b"saved"
+
+
+def test_paths_outside_archive_are_allowed(tmp_path):
+    archive = tmp_path / "results" / "colab_legacy"
+    target = tmp_path / "results" / "sta_cache" / "a.h5"
+    assert check_new_output(target, archive=archive) == target
+    assert check_output_dir(tmp_path / "results" / "sweeps", archive=archive)
+
+
+def test_archive_lookalike_sibling_is_not_mistaken_for_archive(tmp_path):
+    archive = tmp_path / "results" / "colab_legacy"
+    sibling = tmp_path / "results" / "colab_legacy_v2" / "a.h5"
+    assert check_new_output(sibling, archive=archive) == sibling
+
+
+def test_archive_is_recognised_by_its_marker_wherever_the_code_lives(tmp_path):
+    other_repo_archive = tmp_path / "clone" / "results" / "colab_legacy"
+    other_repo_archive.mkdir(parents=True)
+    (other_repo_archive / ARCHIVE_MARKER).write_text("")
+    elsewhere = tmp_path / "unrelated_archive_location"
+    with pytest.raises(PermissionError):
+        check_new_output(other_repo_archive / "sta" / "new.h5", archive=elsewhere)
+    with pytest.raises(PermissionError):
+        check_output_dir(other_repo_archive, archive=elsewhere)
+
+
+def test_write_new_file_is_all_or_nothing(tmp_path):
+    target = tmp_path / "cache" / "a.npy"
+
+    def fail(temporary):
+        temporary.write_bytes(b"half")
+        raise RuntimeError("interrupted")
+
+    with pytest.raises(RuntimeError):
+        write_new_file(target, fail, archive=tmp_path / "archive")
+    assert not target.parent.exists() or list(target.parent.iterdir()) == []
+
+    write_new_file(target, lambda temporary: temporary.write_bytes(b"done"),
+                   archive=tmp_path / "archive")
+    assert target.read_bytes() == b"done"
+    assert list(target.parent.iterdir()) == [target]
+    with pytest.raises(FileExistsError):
+        write_new_file(target, lambda temporary: temporary.write_bytes(b"new"),
+                       archive=tmp_path / "archive")
+    assert target.read_bytes() == b"done"
+
+
+def test_write_new_file_temporary_keeps_the_suffix(tmp_path):
+    seen = []
+    write_new_file(tmp_path / "a.npz", lambda temporary: seen.append(temporary.suffix)
+                   or temporary.write_bytes(b"x"), archive=tmp_path / "archive")
+    assert seen == [".npz"]
+
+
+def _umask():
+    mask = os.umask(0)
+    os.umask(mask)
+    return mask
+
+
+def test_written_files_follow_the_umask(tmp_path):
+    target = write_new_file(tmp_path / "a.bin", lambda t: t.write_bytes(b"x"),
+                            archive=tmp_path / "archive")
+    assert stat.S_IMODE(target.stat().st_mode) == 0o666 & ~_umask()
+
+
+@pytest.mark.parametrize("code", [errno.EPERM, errno.ENOSYS, errno.ENOTSUP])
+def test_filesystems_without_hard_links_fall_back(tmp_path, monkeypatch, code):
+    def no_links(src, dst):
+        raise OSError(code, os.strerror(code))
+
+    monkeypatch.setattr(os, "link", no_links)
+    target = write_new_file(tmp_path / "a.bin", lambda t: t.write_bytes(b"x"),
+                            archive=tmp_path / "archive")
+    assert target.read_bytes() == b"x"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o666 & ~_umask()
+    assert list(tmp_path.iterdir()) == [target]
+
+
+def test_file_appearing_during_the_write_is_not_replaced(tmp_path):
+    target = tmp_path / "a.bin"
+
+    def other_run_finishes_first(temporary):
+        target.write_bytes(b"theirs")
+        temporary.write_bytes(b"ours")
+
+    with pytest.raises(FileExistsError):
+        write_new_file(target, other_run_finishes_first, archive=tmp_path / "archive")
+    assert target.read_bytes() == b"theirs"
+    assert list(tmp_path.iterdir()) == [target]

@@ -51,19 +51,27 @@ convention. Do not transpose or change memory order without validating the STA.
 The actual frozen response is the mean `spk2` count across repeats, divided by
 `dt = 1/30 s` to yield Hz.
 
-## Saved STAs
+## STA cache and the Colab archive
 
-`results/sta/` contains three files per cell:
+Passing `sta_path="results/sta_cache"` (the scripts' default) caches each cell's
+STA in one file, `Cell N STA <key>.h5`, with keys `STA` (shape `(30000, 20)`),
+`spatial_STA` (`(200, 150)`) and `temp_STA` (`(20,)`). `<key>` is a hash of the
+spike counts used, the stimulus size, the filter length, and the stimulus folder
+with each trial file's name, size and modification time. A run on a subset of
+trials (`max_trials` below 219) or on another stimulus folder therefore computes
+and caches its own STA. A cache hit checks the stimulus files' sizes and times
+but reads none of them. Cache files are written whole or not at all and never
+overwritten; delete `results/sta_cache/` to force a recompute. Omitting
+`sta_path` recomputes the STA without caching.
 
-- `Cell N Uncropped STA.h5`, key `STA`, shape `(30000, 20)`;
-- `Cell N Uncropped Spatial STA.h5`, key `spatial_STA`, shape `(200, 150)`;
-- `Cell N Uncropped Temp STA.h5`, key `temp_STA`, shape `(20,)`.
-
-Supplying `sta_path="results/sta"` loads these cached values. Omitting `sta_path`
-recomputes the STA from the selected running trials and stimuli. Those are
-different scientific choices when `max_trials` is less than 219: a cached STA
-uses the trials that originally generated it, while a recomputed STA uses the
-requested subset. State which was used.
+`results/colab_legacy/` holds the outputs of the original Colab analysis
+(STAs in `sta/`, subunits, and classifier, STNMF and LN performance tables),
+unchanged. The code does not read it: its STAs are in the old three-file format,
+so new runs recompute STAs rather than reuse them, and results can differ from
+runs that loaded those saved STAs. Every writer in `src/` raises
+`PermissionError` inside any folder holding the committed marker file
+`.read-only-archive`, so the guard holds in other clones and worktrees too.
+Everything else under `results/` is git-ignored.
 
 ## Filter and alignment
 

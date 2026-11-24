@@ -12,6 +12,7 @@ from torch.utils.data import WeightedRandomSampler
 
 from ..analysis.analyze_subunits import get_subunits
 from ..models.subunit_classifier import SpikeClassifier, SpikeDataset, run_model
+from ..outputs import write_new_file
 from .generate_training_data import crop_sta, gen_ses, gen_sta
 
 
@@ -42,6 +43,16 @@ def _balanced_sampler(labels, generator):
         torch.as_tensor(sample_weights, dtype=torch.double),
         len(sample_weights), replacement=True, generator=generator,
     )
+
+
+def save_subunits(path, subunits):
+    """Write subunits to a new HDF5 file; never overwrites an existing file."""
+
+    def write(temporary):
+        with h5py.File(temporary, "w") as handle:
+            handle.create_dataset("subunits", data=subunits, compression=3)
+
+    return write_new_file(path, write)
 
 
 def run_subunit_model(
@@ -101,14 +112,9 @@ def run_subunit_model(
             raise FileNotFoundError(f"missing requested stimulus file {missing[0]}")
     filter_length = int(filter_length_seconds * refresh_rate)
 
-    names = {
-        "spatial_sta_filename": f"Cell {cell_num} Uncropped Spatial STA.h5",
-        "temp_sta_filename": f"Cell {cell_num} Uncropped Temp STA.h5",
-        "sta_filename": f"Cell {cell_num} Uncropped STA.h5",
-    }
     sta, spatial_sta, temporal_sta = gen_sta(
         stimulus_width, stimulus_height, spikecounts, cell_num, filter_length,
-        num_frames, num_trials, sta_path=sta_path, stim_path=stim_path, **names,
+        num_frames, num_trials, sta_path=sta_path, stim_path=stim_path,
     )
     cropped_sta, crop, ellipse_mask = crop_sta(spatial_sta, sigma)
     examples, labels = gen_ses(
@@ -152,15 +158,12 @@ def run_subunit_model(
         threshold_morans_i=morans_threshold,
     )
     if subunits_save_path is not None:
-        destination = Path(subunits_save_path)
-        destination.mkdir(parents=True, exist_ok=True)
         suffix = "" if version == 0 else f" ({version})"
         filename = (
             f"Cell {cell_num}, {node_num} Nodes, {learning_rate} LR, "
             f"{l1_coefficient} L1 Coeff, {num_epochs} Epochs Subunits{suffix}.h5"
         )
-        with h5py.File(destination / filename, "w") as handle:
-            handle.create_dataset("subunits", data=subunits, compression=3)
+        save_subunits(Path(subunits_save_path) / filename, subunits)
     return PipelineResult(
         model, subunits, node_weights, sta, spatial_sta, temporal_sta, crop,
         ellipse_mask, losses, accuracies, test_loss, test_accuracy,

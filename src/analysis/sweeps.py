@@ -9,9 +9,9 @@ from pathlib import Path
 import numpy as np
 from scipy.io import loadmat
 
+from ..outputs import check_new_output, check_output_dir, write_new_file
 from ..simulation.run_autoencoder_pipeline import run_autoencoder_model
 from ..simulation.run_pipeline import run_subunit_model
-
 
 SUMMARY_FIELDS = [
     "run_id", "status", "model", "cell", "seed", "node_num",
@@ -94,7 +94,7 @@ def _save_artifact(path, result):
     if hasattr(result, "accuracies"):
         arrays["train_accuracies"] = np.asarray(result.accuracies.get("train", []))
         arrays["valid_accuracies"] = np.asarray(result.accuracies.get("valid", []))
-    np.savez_compressed(path, **arrays)
+    write_new_file(path, lambda temporary: np.savez_compressed(temporary, **arrays))
 
 
 def run_sweep(
@@ -114,7 +114,7 @@ def run_sweep(
     Completed run IDs in ``summary.csv`` are skipped, so interrupted sweeps can
     be resumed with the same command. Failed rows are retried on the next run.
     """
-    output_dir = Path(output_dir)
+    output_dir = check_output_dir(output_dir)
     artifact_dir = output_dir / "artifacts"
     summary_path = output_dir / "summary.csv"
     total_trials = loadmat(data_path, variable_names=["spk1"])["spk1"].shape[2]
@@ -155,6 +155,9 @@ def run_sweep(
         )
         row = {"run_id": identifier, **config, "artifact": str(artifact_path)}
         try:
+            # An artifact without a "complete" row was left by an interrupted
+            # run; fail now rather than retrain and then refuse to overwrite it.
+            check_new_output(artifact_path)
             if config["model"] == "classifier":
                 result = run_subunit_model(**common)
                 row.update(

@@ -77,14 +77,9 @@ def run_autoencoder_model(
         raise FileNotFoundError(message)
     spikecounts = spikecounts[:, :num_trials]
     filter_length = int(filter_length_seconds * refresh_rate)
-    names = {
-        "spatial_sta_filename": f"Cell {cell_num} Uncropped Spatial STA.h5",
-        "temp_sta_filename": f"Cell {cell_num} Uncropped Temp STA.h5",
-        "sta_filename": f"Cell {cell_num} Uncropped STA.h5",
-    }
     sta, spatial_sta, temporal_sta = gen_sta(
         stimulus_width, stimulus_height, spikecounts, cell_num, filter_length,
-        num_frames, num_trials, sta_path=sta_path, stim_path=stim_path, **names,
+        num_frames, num_trials, sta_path=sta_path, stim_path=stim_path,
     )
     cropped_sta, crop, ellipse_mask = crop_sta(spatial_sta, sigma)
     ensembles = gen_eses(
