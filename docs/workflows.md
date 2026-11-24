@@ -33,7 +33,7 @@ python scripts/demo_autoencoder_model_comparison.py --help
 python scripts/demo_autoencoder_model_comparison.py \
   --cell 0 --nodes 60 --epochs 100 \
   --learning-rate 0.001 --l1 0.0001 --seed 0 \
-  --output-activation sigmoid
+  --output-activation linear
 ```
 
 Interactive equivalent:
@@ -55,10 +55,13 @@ Classifier result fields:
 | `sta`, `spatial_sta`, `temporal_sta` | STA components |
 | `crop`, `ellipse_mask` | Spatial reference |
 | `losses`, `accuracies` | Per-epoch train/validation curves |
-| `test_loss`, `test_accuracy` | Held-out classifier metrics |
+| `test_loss`, `test_accuracy` | Held-out loss (no L1 term) and plain accuracy |
+| `test_balanced_accuracy`, `test_auc` | Class-balanced held-out metrics (0.5 = chance) |
+| `split_trials` | Trials in the train, valid and test sets |
 
-Autoencoder result fields are analogous, with `validation_loss` and
-`n_examples` replacing classifier test metrics.
+Autoencoder result fields are analogous, with `validation_loss` (restored
+state), `test_loss` (held-out trials) and `n_examples` replacing the
+classifier's accuracy metrics.
 
 ## Hyperparameter sweeps
 

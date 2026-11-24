@@ -5,17 +5,18 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from sklearn.model_selection import train_test_split
 
 from ..analysis.analyze_subunits import get_subunits
 from ..data_cache import cropped_stimulus, load_spike_data
 from ..models.subunit_autoencoder import (
     EnsembleDataset,
     SubunitAutoencoder,
+    evaluate_autoencoder,
     run_autoencoder,
 )
 from .generate_training_data import crop_sta, gen_eses, gen_sta
 from .run_pipeline import _subfolder
+from .splits import split_by_trial
 
 
 @dataclass
@@ -32,7 +33,9 @@ class AutoencoderResult:
     ellipse_mask: np.ndarray
     losses: dict
     validation_loss: float
+    test_loss: float
     n_examples: int
+    split_trials: dict
 
 
 def run_autoencoder_model(
@@ -50,11 +53,12 @@ def run_autoencoder_model(
     batch_size=100,
     learning_rate=0.001,
     num_epochs=100,
-    stop_threshold=1e-5,
+    patience=None,
+    min_improvement=0.0,
     l1_coefficient=0,
     l2_coefficient=0,
     spatial_coefficient=0,
-    output_activation="sigmoid",
+    output_activation="linear",
     random_state=0,
     max_trials=None,
     morans_threshold=0.25,
@@ -64,7 +68,11 @@ def run_autoencoder_model(
 
     The returned ``node_weights`` and ``subunits`` have exactly the same shapes
     and Moran's-I selection semantics as ``run_subunit_model``; ``sta_path``
-    and ``cache_dir`` cache inputs in the same way.
+    and ``cache_dir`` cache inputs in the same way. Spike-triggered ensembles
+    are split into training, validation and test sets by whole trials.
+    ``validation_loss`` is the lowest validation reconstruction error (the
+    restored weights'); ``test_loss`` is the error on the held-out test trials.
+    Every epoch is run unless ``patience`` is given.
     """
     torch.manual_seed(random_state)
     spike_data = load_spike_data(
@@ -93,22 +101,23 @@ def run_autoencoder_model(
         stim_path, crop, stimulus_width, stimulus_height, num_frames, num_trials,
         _subfolder(cache_dir, "stimuli"),
     )
-    ensembles = gen_eses(
+    ensembles, trial_ids = gen_eses(
         stimulus_width, stimulus_height, spikecounts, temporal_sta, cropped_sta,
         crop, ellipse_mask, filter_length, num_frames, num_trials,
         stimuli=stimuli,
     )
-    train_values, valid_values = train_test_split(
-        ensembles, test_size=0.25, random_state=random_state
+    train_index, valid_index, test_index = split_by_trial(trial_ids, random_state)
+    train, valid, test = (
+        EnsembleDataset(ensembles[i]) for i in (train_index, valid_index, test_index)
     )
-    train, valid = EnsembleDataset(train_values), EnsembleDataset(valid_values)
     model = SubunitAutoencoder(
         ensembles.shape[1], node_num, output_activation=output_activation
     ).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     model, losses = run_autoencoder(
         model, train, valid, batch_size=batch_size,
         learning_rate=learning_rate, n_epochs=num_epochs,
-        stop_threshold=stop_threshold, l1_coefficient=l1_coefficient,
+        patience=patience, min_improvement=min_improvement,
+        l1_coefficient=l1_coefficient,
         l2_coefficient=l2_coefficient, spatial_coefficient=spatial_coefficient,
         crop_shape=cropped_sta.shape, ellipse_mask=ellipse_mask,
     )
@@ -121,5 +130,8 @@ def run_autoencoder_model(
     )
     return AutoencoderResult(
         model, subunits, node_weights, sta, spatial_sta, temporal_sta, crop,
-        ellipse_mask, losses, losses["valid"][-1], len(ensembles),
+        ellipse_mask, losses, min(losses["valid"]), evaluate_autoencoder(model, test),
+        len(ensembles),
+        {name: np.unique(trial_ids[index]) for name, index in
+         (("train", train_index), ("valid", valid_index), ("test", test_index))},
     )

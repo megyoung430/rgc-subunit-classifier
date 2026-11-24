@@ -160,6 +160,8 @@ def main(argv=None):
             "nodes": args.nodes, "selected_subunits": len(classifier.subunits),
             "test_loss": classifier.test_loss,
             "test_accuracy": classifier.test_accuracy,
+            "test_balanced_accuracy": classifier.test_balanced_accuracy,
+            "test_auc": classifier.test_auc,
         },
         "ln_model": {
             "correlation": ln_correlation, "mse": ln_metrics.mse,

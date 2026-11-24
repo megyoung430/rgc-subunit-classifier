@@ -24,9 +24,13 @@ class EnsembleDataset(Dataset):
 
 
 class SubunitAutoencoder(nn.Module):
-    """One-layer encoder/decoder architecture from the Colab notebook."""
+    """One-layer encoder/decoder; the encoder weights are candidate subunits.
 
-    def __init__(self, pixel_num, node_num, output_activation="sigmoid"):
+    The output is linear by default because the ensembles are zero-centred:
+    a sigmoid output (0 to 1) cannot reconstruct their negative values.
+    """
+
+    def __init__(self, pixel_num, node_num, output_activation="linear"):
         super().__init__()
         if output_activation not in {"sigmoid", "linear"}:
             raise ValueError("output_activation must be 'sigmoid' or 'linear'")
@@ -64,6 +68,12 @@ def _spatial_group_penalty(weights, crop_shape, ellipse_mask, epsilon=0.01):
 
 def _epoch(model, loader, optimizer=None, l1_coefficient=0.0,
            spatial_coefficient=0.0, crop_shape=None, ellipse_mask=None):
+    """One pass; trains when ``optimizer`` is given.
+
+    Returns the mean reconstruction error (MSE). The L1 and spatial penalties
+    are added to the training objective only, so reported losses can be
+    compared across regularization settings.
+    """
     training = optimizer is not None
     model.train(training)
     device = next(model.parameters()).device
@@ -72,34 +82,46 @@ def _epoch(model, loader, optimizer=None, l1_coefficient=0.0,
     with context:
         for ensembles in loader:
             ensembles = ensembles.to(device)
+            # Mean squared error is batch-size invariant, unlike a summed norm.
+            data_loss = nn.functional.mse_loss(model(ensembles), ensembles)
             if training:
+                objective = data_loss + l1_coefficient * model.subunit_weights.abs().sum()
+                if spatial_coefficient:
+                    objective = objective + spatial_coefficient * _spatial_group_penalty(
+                        model.subunit_weights, crop_shape, ellipse_mask
+                    )
                 optimizer.zero_grad()
-            reconstructed = model(ensembles)
-            # Mean squared error is batch-size invariant, unlike the notebook's
-            # unnormalised Frobenius norm.
-            loss = nn.functional.mse_loss(reconstructed, ensembles)
-            loss = loss + l1_coefficient * model.subunit_weights.abs().sum()
-            if spatial_coefficient:
-                loss = loss + spatial_coefficient * _spatial_group_penalty(
-                    model.subunit_weights, crop_shape, ellipse_mask
-                )
-            if training:
-                loss.backward()
+                objective.backward()
                 optimizer.step()
-            total += loss.item() * len(ensembles)
+            total += data_loss.item() * len(ensembles)
             samples += len(ensembles)
     if samples == 0:
         raise ValueError("cannot train or evaluate on an empty dataset")
     return total / samples
 
 
+def evaluate_autoencoder(model, dataset, batch_size=1024):
+    """Mean reconstruction error (MSE) of ``model`` on ``dataset``."""
+    return _epoch(model, DataLoader(dataset, batch_size=batch_size, shuffle=False))
+
+
 def run_autoencoder(
     model, train_set, valid_set=None, *, batch_size=100, learning_rate=0.001,
-    n_epochs=100, stop_threshold=1e-5, l1_coefficient=0.0,
+    n_epochs=100, patience=None, min_improvement=0.0, l1_coefficient=0.0,
     l2_coefficient=0.0, spatial_coefficient=0.0, crop_shape=None,
     ellipse_mask=None, scheduler_step=None, scheduler_gamma=0.95,
 ):
-    """Train an autoencoder and restore its best validation-loss weights."""
+    """Train an autoencoder with Adam.
+
+    With validation data, the weights with the lowest validation loss are
+    restored at the end. Every epoch is run unless ``patience`` is given, in
+    which case training stops once the validation loss has failed to improve
+    by more than ``min_improvement`` for ``patience`` consecutive epochs.
+    Reported losses are reconstruction errors without the penalties.
+
+    Returns:
+        (model, losses) with losses as ``{"train": [...], "valid": [...]}``.
+    """
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     valid_loader = (
         DataLoader(valid_set, batch_size=batch_size, shuffle=False)
@@ -114,27 +136,25 @@ def run_autoencoder(
         ) if scheduler_step else None
     )
     losses = {"train": [], "valid": []}
-    best_loss, best_state = float("inf"), None
-    for epoch in range(n_epochs):
-        train_loss = _epoch(
+    best_loss, best_state, epochs_without_improvement = float("inf"), None, 0
+    for _ in range(n_epochs):
+        losses["train"].append(_epoch(
             model, train_loader, optimizer, l1_coefficient,
             spatial_coefficient, crop_shape, ellipse_mask,
-        )
-        losses["train"].append(train_loss)
+        ))
         if valid_loader is not None:
-            valid_loss = _epoch(
-                model, valid_loader, None, l1_coefficient,
-                spatial_coefficient, crop_shape, ellipse_mask,
-            )
+            valid_loss = _epoch(model, valid_loader)
             losses["valid"].append(valid_loss)
-            improvement = best_loss - valid_loss
+            if valid_loss < best_loss - min_improvement:
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
             if valid_loss < best_loss:
-                best_loss = valid_loss
-                best_state = copy.deepcopy(model.state_dict())
-            if epoch > 0 and improvement <= stop_threshold:
-                break
+                best_loss, best_state = valid_loss, copy.deepcopy(model.state_dict())
         if scheduler is not None:
             scheduler.step()
+        if patience is not None and epochs_without_improvement >= patience:
+            break
     if best_state is not None:
         model.load_state_dict(best_state)
     return model, losses

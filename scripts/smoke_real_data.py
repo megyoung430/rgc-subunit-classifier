@@ -13,7 +13,7 @@ def main():
         cache_dir="results/cache",
         node_num=3,
         num_epochs=2,
-        max_trials=2,
+        max_trials=3,
         random_state=0,
     )
     classifier = run_subunit_model(
@@ -21,15 +21,15 @@ def main():
     )
     autoencoder = run_autoencoder_model(
         **common, batch_size=128, learning_rate=0.001,
-        output_activation="sigmoid",
+        output_activation="linear",
     )
     print({
-        "classifier_examples": 2 * (1500 - 20),
-        "classifier_test_accuracy": classifier.test_accuracy,
+        "classifier_examples": 3 * (1500 - 20),
+        "classifier_test_balanced_accuracy": classifier.test_balanced_accuracy,
         "classifier_weights": classifier.node_weights.shape,
         "classifier_subunits": len(classifier.subunits),
         "autoencoder_examples": autoencoder.n_examples,
-        "autoencoder_validation_loss": autoencoder.validation_loss,
+        "autoencoder_test_loss": autoencoder.test_loss,
         "autoencoder_weights": autoencoder.node_weights.shape,
         "autoencoder_subunits": len(autoencoder.subunits),
     })
