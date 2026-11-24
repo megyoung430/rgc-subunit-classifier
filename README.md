@@ -244,7 +244,7 @@ Preview before submitting expensive work:
 ```bash
 python scripts/run_hyperparameter_sweep.py \
   --models classifier --cells 0,3,12 --nodes 7,10,20,40,60 \
-  --l1 0,0.0001,0.0005 --learning-rates 0.1,0.5 \
+  --l1 0,0.0001,0.0005 --classifier-learning-rates 0.1,0.5 \
   --seeds 0,1,2 --dry-run
 ```
 
@@ -257,10 +257,13 @@ python scripts/run_data_fraction_sweep.py \
   --seeds 0,1,2 --nodes 60 --epochs 100
 ```
 
-Sweeps write `summary.csv` plus one compressed `.npz` artifact per run. Stable
-configuration hashes make runs resumable: completed runs are skipped and failed
-runs are retried. Run classifier and autoencoder sweeps separately when their
-learning-rate grids differ. See [docs/workflows.md](docs/workflows.md).
+Sweeps write `summary.csv` plus one compressed `.npz` artifact per run. Each
+model has its own learning rates and batch size (`--classifier-learning-rates`,
+`--autoencoder-batch-size`, ...; defaults 0.5/25 for the SGD classifier and
+0.001/100 for the Adam autoencoder). Run IDs hash the settings, the code version
+and the data, so completed runs are skipped, failed runs are retried, and a
+re-run after a code change trains again. The scripts exit with status 1 if any
+run failed. See [docs/workflows.md](docs/workflows.md).
 
 ## Outputs and interpretation
 
